@@ -3,45 +3,45 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Tracking espacial · Persona en el cuarto (WebXR)</title>
+<title>AR primera persona · Referentes espaciales (WebXR)</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600;800&display=swap');
   :root{
-    --bg:#070a0f;--panel:rgba(15,20,29,.85);--edge:#1e2836;
-    --ink:#e9eef3;--dim:#67727f;
-    --person:#2de2a3;--room:#5b8cff;--accent:#c77dff;--warn:#ff5a4d;
+    --bg:#070a0f;--panel:rgba(15,20,29,.82);--edge:#1e2836;
+    --ink:#e9eef3;--dim:#67727f;--accent:#2de2a3;--warn:#ff5a4d;--mark:#ffaf3f;
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;background:var(--bg);color:var(--ink);font-family:'Sora',sans-serif;overflow:hidden;}
   body{background-image:
     radial-gradient(circle at 20% 8%,rgba(45,226,163,.07),transparent 42%),
-    radial-gradient(circle at 82% 92%,rgba(91,140,255,.08),transparent 42%);}
+    radial-gradient(circle at 82% 92%,rgba(255,175,63,.07),transparent 42%);}
   #scene{position:fixed;inset:0;width:100%;height:100%;display:block;}
 
-  .hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:flex;justify-content:space-between;gap:12px;pointer-events:none;}
-  .tag{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--person);
+  .hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:flex;justify-content:space-between;gap:12px;pointer-events:none;z-index:5;}
+  .tag{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent);
     border:1px solid var(--edge);padding:3px 8px;border-radius:2px;background:rgba(7,10,15,.6);backdrop-filter:blur(8px);}
-  .title h1{font-size:17px;font-weight:800;letter-spacing:-.4px;margin-top:7px;line-height:1;}
-  .title h1 em{font-style:normal;color:var(--person);}
+  .title h1{font-size:16px;font-weight:800;letter-spacing:-.4px;margin-top:7px;line-height:1;}
+  .title h1 em{font-style:normal;color:var(--accent);}
   .pill{pointer-events:none;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;padding:6px 11px;border-radius:20px;
     background:rgba(7,10,15,.65);backdrop-filter:blur(8px);border:1px solid var(--edge);display:flex;align-items:center;gap:7px;white-space:nowrap;}
   .pill .d{width:7px;height:7px;border-radius:50%;box-shadow:0 0 8px currentColor;}
-  .pill.tracking{color:var(--person);} .pill.tracking .d{background:var(--person);}
+  .pill.tracking{color:var(--accent);} .pill.tracking .d{background:var(--accent);}
   .pill.idle{color:var(--dim);} .pill.idle .d{background:var(--dim);}
   .pill.lost{color:var(--warn);} .pill.lost .d{background:var(--warn);}
 
-  .telemetry{position:fixed;left:16px;bottom:90px;font-family:'Space Mono',monospace;font-size:11px;line-height:1.7;
-    background:rgba(7,10,15,.6);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:10px;padding:11px 13px;pointer-events:none;min-width:158px;}
+  /* telemetría flota dentro de la sesión AR vía dom-overlay */
+  .telemetry{position:fixed;left:16px;bottom:96px;font-family:'Space Mono',monospace;font-size:11px;line-height:1.7;
+    background:rgba(7,10,15,.55);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:10px;padding:11px 13px;pointer-events:none;min-width:150px;z-index:5;}
   .telemetry .row{display:flex;justify-content:space-between;gap:16px;}
-  .telemetry .lbl{color:var(--dim);} .telemetry .vp{color:var(--person);}
+  .telemetry .lbl{color:var(--dim);} .telemetry .vp{color:var(--accent);}
   .telemetry hr{border:none;border-top:1px solid var(--edge);margin:7px 0;}
-  .telemetry .dist{color:var(--accent);}
+  .telemetry .dist{color:var(--mark);}
 
   .dock{position:fixed;left:0;right:0;bottom:0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));
-    background:var(--panel);backdrop-filter:blur(16px);border-top:1px solid var(--edge);border-radius:18px 18px 0 0;display:flex;gap:10px;}
+    background:var(--panel);backdrop-filter:blur(16px);border-top:1px solid var(--edge);border-radius:18px 18px 0 0;display:flex;gap:10px;z-index:5;}
   .btn{flex:1;padding:14px;border:none;border-radius:12px;font-family:'Sora',sans-serif;font-weight:800;font-size:14px;cursor:pointer;transition:transform .08s ease,box-shadow .2s;}
   .btn:active{transform:scale(.96);}
-  .btn-primary{background:var(--person);color:#04130d;box-shadow:0 4px 20px rgba(45,226,163,.3);}
+  .btn-primary{background:var(--accent);color:#04130d;box-shadow:0 4px 20px rgba(45,226,163,.3);}
   .btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--edge);}
   .btn[disabled]{opacity:.35;pointer-events:none;}
 
@@ -50,46 +50,46 @@
   .gate.hidden{display:none;}
   .gate .tag{margin-bottom:18px;}
   .gate h2{font-size:25px;font-weight:800;letter-spacing:-.6px;line-height:1.12;margin-bottom:12px;max-width:310px;}
-  .gate h2 em{font-style:normal;color:var(--person);}
+  .gate h2 em{font-style:normal;color:var(--accent);}
   .gate p{color:var(--dim);font-weight:300;font-size:13px;line-height:1.6;max-width:310px;margin-bottom:8px;}
   .gate .cap{font-family:'Space Mono',monospace;font-size:10px;color:var(--dim);margin:16px 0 22px;border:1px solid var(--edge);
     border-radius:8px;padding:11px 13px;max-width:330px;line-height:1.8;text-align:left;}
-  .gate .cap b{color:var(--ink);} .gate .cap .ok{color:var(--person);} .gate .cap .no{color:var(--warn);}
+  .gate .cap b{color:var(--ink);} .gate .cap .ok{color:var(--accent);} .gate .cap .no{color:var(--warn);}
   .gate .btn{max-width:310px;width:100%;margin-top:4px;}
-  .warnmsg{color:var(--warn);font-size:11px;font-family:'Space Mono',monospace;margin-top:14px;max-width:310px;line-height:1.5;}
-  .howto{position:fixed;top:64px;left:50%;transform:translateX(-50%);font-family:'Space Mono',monospace;font-size:11px;
-    color:var(--dim);background:rgba(7,10,15,.6);backdrop-filter:blur(8px);border:1px solid var(--edge);border-radius:20px;
-    padding:7px 14px;pointer-events:none;opacity:0;transition:opacity .4s;text-align:center;white-space:nowrap;}
+  .warnmsg{color:var(--warn);font-size:11px;font-family:'Space Mono',monospace;margin-top:14px;max-width:320px;line-height:1.5;}
+  .howto{position:fixed;top:62px;left:50%;transform:translateX(-50%);font-family:'Space Mono',monospace;font-size:11px;
+    color:var(--ink);background:rgba(7,10,15,.6);backdrop-filter:blur(8px);border:1px solid var(--edge);border-radius:20px;
+    padding:7px 14px;pointer-events:none;opacity:0;transition:opacity .4s;text-align:center;z-index:5;max-width:90vw;}
   .howto.show{opacity:1;}
 </style>
 </head>
 <body>
 <canvas id="scene"></canvas>
 
-<div class="hud">
-  <div class="title"><span class="tag">Spatial Tracking · WebXR</span><h1>Tú en el <em>cuarto</em></h1></div>
-  <div id="pill" class="pill idle"><span class="d"></span><span id="pillTxt">EN ESPERA</span></div>
-</div>
-
-<div class="howto" id="howto">camina por la habitación · la esfera te sigue</div>
-
-<div class="telemetry">
-  <div class="row"><span class="lbl">X (lat.)</span><span class="vp" id="t_x">0.00 m</span></div>
-  <div class="row"><span class="lbl">Y (alt.)</span><span class="vp" id="t_y">0.00 m</span></div>
-  <div class="row"><span class="lbl">Z (prof.)</span><span class="vp" id="t_z">0.00 m</span></div>
-  <hr>
-  <div class="row"><span class="lbl">recorrido</span><span class="dist" id="t_dist">0.00 m</span></div>
-</div>
-
-<div class="dock">
-  <button class="btn btn-ghost" id="btnRecenter" disabled>↺ Recentrar</button>
-  <button class="btn btn-primary" id="btnStart" disabled>Comprobando…</button>
+<!-- Estos elementos se muestran como dom-overlay durante la sesión AR -->
+<div id="overlay">
+  <div class="hud">
+    <div class="title"><span class="tag">AR · Primera persona</span><h1>Referentes <em>espaciales</em></h1></div>
+    <div id="pill" class="pill idle"><span class="d"></span><span id="pillTxt">EN ESPERA</span></div>
+  </div>
+  <div class="howto" id="howto">camina alrededor de los referentes · permanecen fijos en tu cuarto</div>
+  <div class="telemetry">
+    <div class="row"><span class="lbl">X</span><span class="vp" id="t_x">0.00 m</span></div>
+    <div class="row"><span class="lbl">Y</span><span class="vp" id="t_y">0.00 m</span></div>
+    <div class="row"><span class="lbl">Z</span><span class="vp" id="t_z">0.00 m</span></div>
+    <hr>
+    <div class="row"><span class="lbl">recorrido</span><span class="dist" id="t_dist">0.00 m</span></div>
+  </div>
+  <div class="dock">
+    <button class="btn btn-ghost" id="btnRecenter" disabled>↺ Recentrar</button>
+    <button class="btn btn-primary" id="btnStart" disabled>Comprobando…</button>
+  </div>
 </div>
 
 <div class="gate" id="gate">
-  <span class="tag">Spatial Tracking · WebXR</span>
-  <h2>Camina por tu cuarto,<br>la <em>esfera</em> te replica</h2>
-  <p>La esfera es tu posición; el cubo es la habitación. WebXR usa los sensores del teléfono para seguir tu movimiento real por el espacio.</p>
+  <span class="tag">AR · WebXR · Three.js</span>
+  <h2>Camina entre<br><em>referentes</em> anclados</h2>
+  <p>Mira a través de la cámara: colocaré objetos 3D fijos en tu habitación. Al moverte los verás desde distintos ángulos, dándote sensación de desplazamiento real.</p>
   <div class="cap" id="cap">Detectando capacidades…</div>
   <button class="btn btn-primary" id="btnGateStart" disabled>Comprobando…</button>
   <div class="warnmsg" id="gateWarn"></div>
@@ -99,84 +99,78 @@
 import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js';
 const $=id=>document.getElementById(id);
 
-/* ===== CONFIG DEL CUARTO ===== */
-const ROOM=3.0;        // medio-lado del cuarto en metros (cuarto de 6x6x... ajustable)
-const PERSON_R=0.18;   // radio de la esfera-persona
-const LIMIT=ROOM-PERSON_R;
-
 /* ===== ESTADO ===== */
-const S={
-  tracking:false,
-  origin:null,           // posición de referencia (recentrado), en coords XR
-  cur:new THREE.Vector3(0,0,0),   // posición actual relativa al origen (metros)
-  last:new THREE.Vector3(0,0,0),
-  distance:0
-};
+const S={tracking:false, origin:null, cur:new THREE.Vector3(), last:new THREE.Vector3(), distance:0};
 
-/* ===== THREE ===== */
+/* ===== THREE (la cámara la controla WebXR en sesión) ===== */
 const canvas=$('scene');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0x000000,0); // transparente: se ve la cámara real detrás
 const scene=new THREE.Scene();
-// cámara de observación (tercera persona): vemos el cuarto desde una esquina elevada
-const camera=new THREE.PerspectiveCamera(50,1,0.1,100);
-camera.position.set(ROOM*1.9,ROOM*1.7,ROOM*1.9); camera.lookAt(0,0,0);
+const camera=new THREE.PerspectiveCamera(60,1,0.01,100);
 
-scene.add(new THREE.AmbientLight(0xffffff,.55));
-const key=new THREE.DirectionalLight(0xffffff,1.1);key.position.set(5,9,6);scene.add(key);
-const rim=new THREE.DirectionalLight(0xc77dff,.5);rim.position.set(-6,3,-5);scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xffffff,0x223044,1.1));
+const key=new THREE.DirectionalLight(0xffffff,.9);key.position.set(3,6,2);scene.add(key);
 
-// CUARTO: cubo wireframe + suelo
-const roomGeo=new THREE.BoxGeometry(ROOM*2,ROOM*2,ROOM*2);
-scene.add(new THREE.LineSegments(new THREE.EdgesGeometry(roomGeo),
-  new THREE.LineBasicMaterial({color:0x5b8cff,transparent:true,opacity:.5})));
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(ROOM*2,ROOM*2),
-  new THREE.MeshStandardMaterial({color:0x0c1424,metalness:.2,roughness:.75,transparent:true,opacity:.65,side:THREE.DoubleSide}));
-floor.rotation.x=-Math.PI/2; floor.position.y=-ROOM; scene.add(floor);
-const fgrid=new THREE.GridHelper(ROOM*2,12,0x2a4a7d,0x182942); fgrid.position.y=-ROOM+.01; scene.add(fgrid);
+/* =========================================================
+   REFERENTES VISUALES ANCLADOS AL MUNDO
+   Todos hijos de 'world', que se desplaza con el recentrado.
+   ========================================================= */
+const world=new THREE.Group(); scene.add(world);
 
-// PERSONA: esfera
-const person=new THREE.Mesh(new THREE.SphereGeometry(PERSON_R,32,32),
-  new THREE.MeshStandardMaterial({color:0x2de2a3,metalness:.3,roughness:.3,emissive:0x2de2a3,emissiveIntensity:.25}));
-scene.add(person);
-// halo bajo la persona (proyección al suelo)
-const proj=new THREE.Mesh(new THREE.RingGeometry(PERSON_R*1.1,PERSON_R*1.4,28),
-  new THREE.MeshBasicMaterial({color:0x2de2a3,transparent:true,opacity:.5,side:THREE.DoubleSide}));
-proj.rotation.x=-Math.PI/2; scene.add(proj);
-// línea vertical persona->suelo
-const dropGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
-const drop=new THREE.Line(dropGeo,new THREE.LineBasicMaterial({color:0x2de2a3,transparent:true,opacity:.3}));
-scene.add(drop);
+// --- Rejilla de suelo (referencia de plano y escala) ---
+const grid=new THREE.GridHelper(10,20,0x2de2a3,0x244055);
+grid.material.transparent=true; grid.material.opacity=.55;
+world.add(grid);
 
-// RASTRO del recorrido
-const MAXTRAIL=600;
-const trailPos=new Float32Array(MAXTRAIL*3); let trailLen=0;
-const trailGeo=new THREE.BufferGeometry(); trailGeo.setAttribute('position',new THREE.BufferAttribute(trailPos,3));
-const trail=new THREE.Line(trailGeo,new THREE.LineBasicMaterial({color:0xc77dff,transparent:true,opacity:.7}));
-scene.add(trail);
+// --- Ejes en el origen (X rojo, Y verde, Z azul) ---
+const axes=new THREE.AxesHelper(0.6); world.add(axes);
 
-function placePerson(x,y,z){
-  // clamp dentro del cuarto
-  x=Math.max(-LIMIT,Math.min(LIMIT,x));
-  z=Math.max(-LIMIT,Math.min(LIMIT,z));
-  y=Math.max(-ROOM+PERSON_R,Math.min(ROOM-PERSON_R,y));
-  person.position.set(x,y,z);
-  proj.position.set(x,-ROOM+.02,z);
-  dropGeo.setFromPoints([new THREE.Vector3(x,y,z),new THREE.Vector3(x,-ROOM+.02,z)]);
-  dropGeo.attributes.position.needsUpdate=true;
+// --- Marcador de origen: octaedro brillante donde empezaste ---
+const origin=new THREE.Mesh(new THREE.OctahedronGeometry(0.12),
+  new THREE.MeshStandardMaterial({color:0x2de2a3,emissive:0x2de2a3,emissiveIntensity:.6,metalness:.3,roughness:.3}));
+origin.position.y=0.12; world.add(origin);
+
+// --- Postes/columnas en posiciones conocidas (referencia de paralaje) ---
+function post(x,z,color){
+  const g=new THREE.Group();
+  const h=1.4;
+  const col=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,h,16),
+    new THREE.MeshStandardMaterial({color,metalness:.3,roughness:.4,emissive:color,emissiveIntensity:.15}));
+  col.position.y=h/2; g.add(col);
+  // esfera en la punta para verla de lejos
+  const top=new THREE.Mesh(new THREE.SphereGeometry(0.12,20,20),
+    new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.5,metalness:.2,roughness:.3}));
+  top.position.y=h; g.add(top);
+  // anillo en la base sobre el suelo
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.18,0.24,24),
+    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.5,side:THREE.DoubleSide}));
+  ring.rotation.x=-Math.PI/2; ring.position.y=0.01; g.add(ring);
+  g.position.set(x,0,z);
+  world.add(g);
+  return g;
 }
-function pushTrail(x,y,z){
-  if(trailLen>=MAXTRAIL){ // desplaza
-    trailPos.copyWithin(0,3); trailLen=MAXTRAIL-1;
-  }
-  trailPos[trailLen*3]=x;trailPos[trailLen*3+1]=y;trailPos[trailLen*3+2]=z;
-  trailLen++; trailGeo.setDrawRange(0,trailLen); trailGeo.attributes.position.needsUpdate=true;
-}
-function clearTrail(){ trailLen=0; trailGeo.setDrawRange(0,0); }
+// distribución: cuatro postes alrededor formando un cuadrado de 2m de lado
+post( 1.5,  1.5, 0xff5a4d);  // rojo
+post(-1.5,  1.5, 0x4d9fff);  // azul
+post( 1.5, -1.5, 0xffaf3f);  // ámbar
+post(-1.5, -1.5, 0xc77dff);  // morado
 
-function resize(){const w=canvas.clientWidth,h=canvas.clientHeight;
-  if(canvas.width!==w*devicePixelRatio||canvas.height!==h*devicePixelRatio){
-    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}}
+// --- Marcadores de distancia métrica frente al origen (1m,2m,3m) ---
+function distMarker(z,label){
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.28,0.34,32),
+    new THREE.MeshBasicMaterial({color:0x2de2a3,transparent:true,opacity:.35,side:THREE.DoubleSide}));
+  ring.rotation.x=-Math.PI/2; ring.position.set(0,0.01,-z); world.add(ring);
+}
+distMarker(1); distMarker(2); distMarker(3);
+
+// --- "Techo" de puntos para tener referencia arriba también ---
+const dotGeo=new THREE.SphereGeometry(0.03,8,8);
+const dotMat=new THREE.MeshBasicMaterial({color:0x2de2a3,transparent:true,opacity:.4});
+for(let x=-2;x<=2;x++)for(let z=-2;z<=2;z++){
+  const d=new THREE.Mesh(dotGeo,dotMat); d.position.set(x,2.2,z); world.add(d);
+}
 
 /* ===== CAPACIDADES ===== */
 const caps={https:false,xr:false};
@@ -185,52 +179,59 @@ async function detect(){
   try{ caps.xr=!!(navigator.xr && await navigator.xr.isSessionSupported('immersive-ar')); }catch(e){caps.xr=false;}
   $('cap').innerHTML=
     `<b>HTTPS</b> ${caps.https?'<span class="ok">✓</span>':'<span class="no">✗ requerido</span>'}<br>`+
-    `<b>WebXR AR</b> ${caps.xr?'<span class="ok">✓ disponible</span>':'<span class="no">✗ no soportado</span>'} · tracking posicional<br>`+
-    `<b>Dispositivo</b> ${caps.xr?'<span class="ok">compatible</span>':'requiere Android + Chrome + ARCore'}`;
+    `<b>WebXR AR</b> ${caps.xr?'<span class="ok">✓ disponible</span>':'<span class="no">✗ no soportado</span>'}<br>`+
+    `<b>Modo</b> primera persona · referentes anclados`;
   const ready=caps.https&&caps.xr;
-  ['btnStart','btnGateStart'].forEach(id=>{$(id).disabled=!ready;$(id).textContent=ready?'Iniciar tracking':'No disponible';});
+  ['btnStart','btnGateStart'].forEach(id=>{$(id).disabled=!ready;$(id).textContent=ready?'Iniciar AR':'No disponible';});
   if(!caps.https) $('gateWarn').textContent='⚠ Necesita HTTPS. Sírvelo por https:// o localhost.';
-  else if(!caps.xr) $('gateWarn').textContent='⚠ Este dispositivo/navegador no soporta WebXR AR, que es lo único que permite tracking posicional real en navegador. En iPhone no está disponible.';
+  else if(!caps.xr) $('gateWarn').textContent='⚠ Este equipo/navegador no soporta WebXR AR.';
 }
 
-/* ===== WEBXR ===== */
+/* ===== WEBXR (primera persona) ===== */
 let session=null, refSpace=null, usedSpace=null;
 async function start(){
   if(!(caps.https&&caps.xr)) return;
   try{
-    // Petición mínima: 'local' es el espacio garantizado para immersive-ar.
-    // No pedimos local-floor como requerido para no provocar el rechazo de config.
-    session=await navigator.xr.requestSession('immersive-ar');
-    renderer.xr.enabled=true;
-    await renderer.xr.setSession(session);
-    // Cascada de espacios de referencia: del más útil al mínimo garantizado.
+    // dom-overlay permite que el HUD/telemetría se vean sobre la cámara
+    const init={optionalFeatures:['dom-overlay'], domOverlay:{root:$('overlay')}};
+    session=await navigator.xr.requestSession('immersive-ar', init);
+
+    // reference space en cascada
     refSpace=null;
     for(const type of ['local-floor','local','viewer']){
       try{ refSpace=await session.requestReferenceSpace(type); usedSpace=type; break; }
-      catch(e){ /* probar el siguiente */ }
+      catch(e){}
     }
     if(!refSpace) throw new Error('Ningún reference space disponible');
-    S.tracking=true; S.origin=null; S.distance=0; clearTrail();
+
+    // CLAVE: fijar el tipo en Three.js ANTES de setSession
+    renderer.xr.enabled=true;
+    renderer.xr.setReferenceSpaceType(usedSpace);
+    await renderer.xr.setSession(session);
+
+    // si hay local-floor, el suelo de la rejilla coincide con el suelo real;
+    // si solo hay local, bajamos el mundo ~1.4m (altura típica del teléfono)
+    world.position.y = (usedSpace==='local') ? -1.4 : 0;
+
+    S.tracking=true; S.origin=null; S.distance=0;
     setPill('tracking'); $('gate').classList.add('hidden'); $('btnRecenter').disabled=false;
     $('howto').classList.add('show');
     if(usedSpace==='viewer'){
-      $('howto').textContent='⚠ solo rotación disponible · sin tracking posicional en este equipo';
-      setTimeout(()=>$('howto').classList.remove('show'),7000);
-    }else{
-      setTimeout(()=>$('howto').classList.remove('show'),5000);
+      $('howto').textContent='⚠ solo rotación · sin desplazamiento en este equipo';
     }
+    setTimeout(()=>$('howto').classList.remove('show'),6000);
     session.addEventListener('end',onEnd);
     renderer.setAnimationLoop(frame);
   }catch(e){
     const msg=(e&&e.message)?e.message:String(e);
     $('gateWarn').innerHTML='No se pudo iniciar: '+msg+
-      '<br><span style="color:var(--dim)">Verifica: ARCore instalado y actualizado · Chrome actualizado · permiso de cámara concedido.</span>';
+      '<br><span style="color:var(--dim)">Verifica ARCore actualizado · Chrome actualizado · permiso de cámara.</span>';
   }
 }
 function onEnd(){
   S.tracking=false; renderer.xr.enabled=false; renderer.setAnimationLoop(null);
   setPill('idle'); $('pillTxt').textContent='EN ESPERA'; $('btnRecenter').disabled=true;
-  requestAnimationFrame(loopIdle);
+  $('gate').classList.remove('hidden');
 }
 function frame(t,xrframe){
   if(xrframe){
@@ -239,33 +240,22 @@ function frame(t,xrframe){
       setPill('tracking');
       const p=pose.transform.position;
       if(!S.origin) S.origin=new THREE.Vector3(p.x,p.y,p.z);
-      // posición relativa al origen recentrado = posición de la persona en el cuarto
       const rx=p.x-S.origin.x, ry=p.y-S.origin.y, rz=p.z-S.origin.z;
       S.cur.set(rx,ry,rz);
-      // acumular recorrido (solo plano XZ, el caminar)
-      const d=Math.hypot(rx-S.last.x,rz-S.last.z);
-      if(d>0.004){ S.distance+=d; pushTrail(
-        Math.max(-LIMIT,Math.min(LIMIT,rx)),
-        Math.max(-ROOM+PERSON_R,Math.min(ROOM-PERSON_R,ry)),
-        Math.max(-LIMIT,Math.min(LIMIT,rz))); }
+      const d=Math.hypot(rx-S.last.x, rz-S.last.z);
+      if(d>0.004) S.distance+=d;
       S.last.copy(S.cur);
-      placePerson(rx,ry,rz);
-    }else{
-      setPill('lost'); $('pillTxt').textContent='SIN REFERENCIA';
-    }
+      updateTelemetry();
+    }else{ setPill('lost'); $('pillTxt').textContent='SIN REFERENCIA'; }
   }
-  updateTelemetry();
+  // animación sutil de los referentes para que se distingan del entorno
+  origin.rotation.y+=0.02;
   renderer.render(scene,camera);
 }
-function setPill(cls){ const p=$('pill'); p.className='pill '+cls;
-  if(cls==='tracking')$('pillTxt').textContent='SIGUIENDO'; }
+function setPill(cls){const p=$('pill');p.className='pill '+cls;if(cls==='tracking')$('pillTxt').textContent='SIGUIENDO';}
 
-/* ===== RECENTRAR ===== */
-function recenter(){
-  // fija la posición actual como nuevo centro del cuarto
-  if(S.tracking){ S.origin=null; } // se recaptura en el próximo frame
-  S.cur.set(0,0,0); S.last.set(0,0,0); S.distance=0; clearTrail(); placePerson(0,0,0);
-}
+/* ===== RECENTRAR: el origen del mundo vuelve a donde estás ahora ===== */
+function recenter(){ S.origin=null; S.cur.set(0,0,0); S.last.set(0,0,0); S.distance=0; updateTelemetry(); }
 $('btnRecenter').addEventListener('click',recenter);
 $('btnStart').addEventListener('click',start);
 $('btnGateStart').addEventListener('click',start);
@@ -277,20 +267,14 @@ function updateTelemetry(){
   $('t_dist').textContent=S.distance.toFixed(2)+' m';
 }
 
-/* ===== LOOP IDLE (antes de XR, para que la escena no esté congelada) ===== */
-function loopIdle(){
-  if(S.tracking) return;
-  placePerson(S.cur.x,S.cur.y,S.cur.z);
-  updateTelemetry(); resize(); renderer.render(scene,camera);
-  requestAnimationFrame(loopIdle);
-}
-
 /* ===== ARRANQUE ===== */
 detect();
-placePerson(0,0,0);
-resize();
-requestAnimationFrame(loopIdle);
-window.addEventListener('resize',resize);
+function resize(){const w=canvas.clientWidth,h=canvas.clientHeight;
+  if(canvas.width!==w*devicePixelRatio||canvas.height!==h*devicePixelRatio){
+    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}}
+resize(); window.addEventListener('resize',resize);
+// loop idle ligero antes de entrar a AR (solo para no quedar en negro)
+(function idle(){ if(S.tracking) return; resize(); renderer.render(scene,camera); requestAnimationFrame(idle); })();
 </script>
 </body>
 </html>
