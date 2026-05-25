@@ -3,295 +3,389 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Fusión GPS + IMU · Desplazamiento adaptativo</title>
+<title>Calibración Relativa · Sensores reales</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600;800&display=swap');
   :root{
-    --bg:#080b11;--panel:rgba(16,21,30,.84);--edge:#1e2836;
-    --ink:#e9eef3;--dim:#67727f;--imu:#2de2a3;--gps:#4d9fff;--fused:#c77dff;--warn:#ff5a4d;
+    --bg:#0a0c10;--surface:#111520;--border:#1e2535;
+    --accent:#00e5ff;--accent2:#ff4b6e;--accent3:#7fff6a;
+    --text:#cdd6f4;--muted:#4a5270;--warn:#f5c542;
+    --mono:'Courier New',monospace;--ui:'Trebuchet MS',sans-serif;
   }
-  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;background:var(--bg);color:var(--ink);font-family:'Sora',sans-serif;overflow:hidden;}
-  body{background-image:
-    radial-gradient(circle at 20% 8%,rgba(45,226,163,.06),transparent 42%),
-    radial-gradient(circle at 82% 92%,rgba(77,159,255,.07),transparent 42%);}
-  #scene{position:fixed;inset:0;width:100%;height:100%;display:block;}
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{background:var(--bg);color:var(--text);font-family:var(--ui);min-height:100vh;
+    display:flex;flex-direction:column;align-items:center;padding:16px 8px 32px;overflow-x:hidden;}
+  header{width:100%;max-width:480px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:10px;}
+  header h1{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-family:var(--mono);}
+  header p{font-size:10px;color:var(--muted);margin-top:3px;font-family:var(--mono);}
 
-  .hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:flex;justify-content:space-between;gap:12px;pointer-events:none;z-index:5;}
-  .tag{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--fused);
-    border:1px solid var(--edge);padding:3px 8px;border-radius:2px;background:rgba(8,11,17,.6);backdrop-filter:blur(8px);}
-  .title h1{font-size:16px;font-weight:800;letter-spacing:-.4px;margin-top:7px;line-height:1;}
-  .title h1 em{font-style:normal;color:var(--fused);}
-  .pill{pointer-events:none;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;padding:6px 11px;border-radius:20px;
-    background:rgba(8,11,17,.65);backdrop-filter:blur(8px);border:1px solid var(--edge);display:flex;align-items:center;gap:7px;white-space:nowrap;}
-  .pill .d{width:7px;height:7px;border-radius:50%;box-shadow:0 0 8px currentColor;}
-  .pill.gps{color:var(--gps);} .pill.gps .d{background:var(--gps);}
-  .pill.imu{color:var(--imu);} .pill.imu .d{background:var(--imu);}
-  .pill.idle{color:var(--dim);} .pill.idle .d{background:var(--dim);}
+  #phone-frame{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--border);
+    border-radius:20px;overflow:hidden;box-shadow:0 0 40px rgba(0,229,255,.04),0 0 0 1px #1a2030;display:flex;flex-direction:column;}
+  #status-bar{background:#0d1018;display:flex;justify-content:space-between;padding:6px 16px;
+    font-family:var(--mono);font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);}
 
-  .telemetry{position:fixed;left:16px;bottom:96px;font-family:'Space Mono',monospace;font-size:11px;line-height:1.7;
-    background:rgba(8,11,17,.6);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:10px;padding:11px 13px;pointer-events:none;min-width:178px;z-index:5;}
-  .telemetry .row{display:flex;justify-content:space-between;gap:14px;}
-  .telemetry .lbl{color:var(--dim);}
-  .telemetry .vf{color:var(--fused);} .telemetry .vg{color:var(--gps);} .telemetry .vi{color:var(--imu);}
-  .telemetry hr{border:none;border-top:1px solid var(--edge);margin:7px 0;}
-  .telemetry .small{font-size:9px;color:var(--dim);}
+  #canvas-wrap{position:relative;width:100%;aspect-ratio:1/1;background:#0d1018;overflow:hidden;}
+  #mainCanvas{width:100%;height:100%;display:block;}
+  #overlay-hint{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(10,12,16,.9);
+    border:1px solid var(--border);border-radius:8px;padding:9px 15px;font-family:var(--mono);font-size:11px;
+    color:var(--accent);pointer-events:none;text-align:center;transition:opacity .4s;max-width:92%;}
 
-  .legend{position:fixed;right:16px;bottom:96px;font-family:'Space Mono',monospace;font-size:10px;line-height:1.8;
-    background:rgba(8,11,17,.6);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:10px;padding:10px 12px;pointer-events:none;z-index:5;}
-  .legend .it{display:flex;align-items:center;gap:7px;color:var(--dim);}
-  .legend .sw{width:14px;height:3px;border-radius:2px;}
+  #hud{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);
+    border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+  .hud-cell{background:var(--surface);padding:8px 10px;font-family:var(--mono);}
+  .hud-cell .label{font-size:8px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);}
+  .hud-cell .value{font-size:14px;font-weight:bold;color:var(--text);margin-top:2px;}
+  .hud-cell .value.accent{color:var(--accent);} .hud-cell .value.accent2{color:var(--accent2);} .hud-cell .value.accent3{color:var(--accent3);}
 
-  .dock{position:fixed;left:0;right:0;bottom:0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));
-    background:var(--panel);backdrop-filter:blur(16px);border-top:1px solid var(--edge);border-radius:18px 18px 0 0;display:flex;gap:10px;z-index:5;}
-  .btn{flex:1;padding:14px;border:none;border-radius:12px;font-family:'Sora',sans-serif;font-weight:800;font-size:14px;cursor:pointer;transition:transform .08s ease,box-shadow .2s;}
-  .btn:active{transform:scale(.96);}
-  .btn-primary{background:var(--fused);color:#1a0533;box-shadow:0 4px 20px rgba(199,125,255,.3);}
-  .btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--edge);}
-  .btn[disabled]{opacity:.4;pointer-events:none;}
+  #controls{padding:12px;display:flex;flex-direction:column;gap:8px;background:var(--surface);}
+  #step-indicator{display:flex;gap:6px;align-items:center;font-family:var(--mono);font-size:10px;color:var(--muted);padding:0 2px;}
+  .step-dot{width:7px;height:7px;border-radius:50%;background:var(--border);transition:background .3s;}
+  .step-dot.active{background:var(--accent);box-shadow:0 0 6px var(--accent);} .step-dot.done{background:var(--accent3);}
 
-  .gate{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;
-    background:radial-gradient(circle at 50% 35%,#0e1521,#05070b);}
-  .gate.hidden{display:none;}
-  .gate .tag{margin-bottom:18px;}
-  .gate h2{font-size:24px;font-weight:800;letter-spacing:-.6px;line-height:1.12;margin-bottom:12px;max-width:320px;}
-  .gate h2 em{font-style:normal;color:var(--fused);}
-  .gate p{color:var(--dim);font-weight:300;font-size:13px;line-height:1.6;max-width:330px;margin-bottom:8px;}
-  .gate .info{background:rgba(77,159,255,.07);border:1px solid rgba(77,159,255,.28);border-radius:10px;
-    padding:13px 15px;max-width:340px;margin:14px 0 20px;font-size:12px;line-height:1.55;color:#bcd6ff;text-align:left;}
-  .gate .info b{color:var(--gps);}
-  .gate .btn{max-width:340px;width:100%;}
-  .warnmsg{color:var(--warn);font-size:11px;font-family:'Space Mono',monospace;margin-top:14px;max-width:340px;line-height:1.5;}
+  .btn{width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:8px;font-family:var(--mono);
+    font-size:12px;letter-spacing:.06em;cursor:pointer;background:#0d1018;color:var(--text);text-align:left;
+    transition:all .15s;display:flex;align-items:center;gap:10px;}
+  .btn:active:not(:disabled){transform:scale(.98);}
+  .btn:disabled{opacity:.28;cursor:not-allowed;}
+  .btn-primary{border-color:var(--accent);color:var(--accent);background:rgba(0,229,255,.05);}
+  .btn-secondary{border-color:var(--accent2);color:var(--accent2);background:rgba(255,75,110,.04);}
+  .btn-reset{border-color:var(--muted);color:var(--muted);font-size:11px;}
+  .btn-icon{font-size:16px;flex-shrink:0;}
+
+  #step-bar-wrap{background:#0d1018;border:1px solid var(--border);border-radius:4px;height:6px;overflow:hidden;}
+  #step-bar{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));width:0%;transition:width .3s;border-radius:4px;}
+
+  #log-wrap{background:#0a0c10;border-top:1px solid var(--border);padding:8px 12px;max-height:96px;overflow-y:auto;}
+  #log-wrap::-webkit-scrollbar{width:4px;} #log-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+  .log-line{font-family:var(--mono);font-size:10px;color:var(--muted);padding:1px 0;border-bottom:1px solid rgba(30,37,53,.4);display:flex;gap:8px;}
+  .log-line .ts{color:#2a3050;flex-shrink:0;} .log-line .msg{color:var(--text);}
+  .log-line.ok .msg{color:var(--accent3);} .log-line.warn .msg{color:var(--accent2);} .log-line.info .msg{color:var(--accent);}
+
+  #elastic-bar-wrap{padding:8px 12px 12px;background:var(--surface);border-top:1px solid var(--border);
+    font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+  #elastic-bar-track{background:#0d1018;border:1px solid var(--border);border-radius:4px;height:8px;overflow:hidden;margin-top:5px;}
+  #elastic-bar-fill{height:100%;width:0%;background:var(--accent3);transition:width .15s,background .3s;}
+  #elastic-label{margin-top:5px;display:block;}
+
+  .stride{padding:0 12px 12px;background:var(--surface);}
+  .stride label{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.08em;}
+  .stride .sv{color:var(--accent);}
+  .stride input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:4px;background:#0d1018;}
+  .stride input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);box-shadow:0 0 8px var(--accent);cursor:pointer;}
+
+  .stepdot-vis{position:absolute;right:12px;bottom:12px;width:46px;height:46px;border-radius:50%;
+    background:rgba(255,75,110,.12);border:2px solid var(--accent2);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent2);transition:transform .1s,background .1s;}
+  .stepdot-vis.flash{transform:scale(1.25);background:rgba(255,75,110,.4);}
 </style>
 </head>
 <body>
-<canvas id="scene"></canvas>
+<header>
+  <h1>Calibración Relativa · Sensores Reales</h1>
+  <p>Origen céntrico → Radio R por pasos → Recorrido con elastic capping</p>
+</header>
 
-<div class="hud">
-  <div class="title"><span class="tag">GPS + IMU Fusion</span><h1>Desplazamiento <em>fusionado</em></h1></div>
-  <div id="pill" class="pill idle"><span class="d"></span><span id="pillTxt">EN ESPERA</span></div>
-</div>
+<div id="phone-frame">
+  <div id="status-bar"><span id="clock">--:--</span><span id="sensor-state">SENSORES: OFF</span></div>
 
-<div class="telemetry">
-  <div class="row"><span class="lbl">pos fusión X</span><span class="vf" id="t_fx">0.0 m</span></div>
-  <div class="row"><span class="lbl">pos fusión Z</span><span class="vf" id="t_fz">0.0 m</span></div>
-  <hr>
-  <div class="row"><span class="lbl vg">GPS ±</span><span class="vg" id="t_acc">— m</span></div>
-  <div class="row"><span class="lbl vg">GPS fix</span><span class="vg" id="t_fix">esperando</span></div>
-  <div class="row"><span class="lbl vi">IMU vel</span><span class="vi" id="t_vel">0.00 m/s</span></div>
-  <hr>
-  <div class="row"><span class="lbl">recorrido</span><span class="vf" id="t_dist">0.0 m</span></div>
-  <div class="small" id="t_scale">escala: auto</div>
-</div>
-
-<div class="legend">
-  <div class="it"><span class="sw" style="background:var(--fused)"></span> fusión</div>
-  <div class="it"><span class="sw" style="background:var(--gps)"></span> GPS crudo</div>
-  <div class="it"><span class="sw" style="background:var(--imu)"></span> IMU sola</div>
-</div>
-
-<div class="dock">
-  <button class="btn btn-ghost" id="btnRecenter" disabled>↺ Marcar origen</button>
-  <button class="btn btn-primary" id="btnStart">Activar GPS + sensores</button>
-</div>
-
-<div class="gate" id="gate">
-  <span class="tag">Filtro complementario GPS·IMU</span>
-  <h2>El GPS ancla,<br>la <em>IMU</em> suaviza</h2>
-  <p>Combina lo mejor de cada fuente: el GPS da posición absoluta que no deriva pero es lenta y ruidosa; el acelerómetro es rápido pero deriva. Juntos se compensan.</p>
-  <div class="info">
-    <b>Para exteriores.</b> Sal a un espacio abierto con vista al cielo y camina. En interiores el GPS falla y el sistema cae solo a la IMU (con deriva). La esfera morada es la fusión; verás también el GPS crudo (azul) y la IMU sola (verde) para comparar.
+  <div id="canvas-wrap">
+    <canvas id="mainCanvas"></canvas>
+    <div id="overlay-hint">→ Ponte en el CENTRO del espacio y fija el origen</div>
+    <div class="stepdot-vis" id="stepdot">0</div>
   </div>
-  <button class="btn btn-primary" id="btnGateStart">Activar GPS + sensores</button>
-  <div class="warnmsg" id="gateWarn"></div>
+
+  <div id="hud">
+    <div class="hud-cell"><div class="label">Posición (u)</div><div class="value accent" id="hud-pos">—</div></div>
+    <div class="hud-cell"><div class="label">Radio R (u)</div><div class="value accent2" id="hud-r">—</div></div>
+    <div class="hud-cell"><div class="label">Atenuación</div><div class="value accent3" id="hud-atten">—</div></div>
+  </div>
+
+  <div id="controls">
+    <div id="step-indicator">
+      <span class="step-dot" id="dot-0"></span><span class="step-dot" id="dot-1"></span><span class="step-dot" id="dot-2"></span>
+      <span id="step-label" style="margin-left:6px">Paso 1 de 3</span>
+    </div>
+    <button class="btn btn-primary" id="btn-origin"><span class="btn-icon">◎</span> Activar sensores y fijar ORIGEN (centro)</button>
+    <div id="step-bar-wrap"><div id="step-bar"></div></div>
+    <button class="btn btn-secondary" id="btn-step" disabled><span class="btn-icon">▸</span> Camina a la pared · pasos: <span id="steps-count">0</span></button>
+    <button class="btn btn-secondary" id="btn-setR" disabled><span class="btn-icon">⊙</span> Fijar RADIO aquí (llegaste a la pared)</button>
+    <button class="btn btn-primary" id="btn-move" disabled><span class="btn-icon">⟲</span> Recentrar y RECORRER el espacio</button>
+    <button class="btn btn-reset" id="btn-reset"><span class="btn-icon">↺</span> Reiniciar calibración</button>
+  </div>
+
+  <div class="stride">
+    <label>Longitud de zancada <span class="sv" id="stride-val">0.70 m</span></label>
+    <input type="range" id="stride-range" min="0.45" max="0.95" value="0.70" step="0.01">
+  </div>
+
+  <div id="elastic-bar-wrap">
+    Proximidad al borde
+    <div id="elastic-bar-track"><div id="elastic-bar-fill"></div></div>
+    <span id="elastic-label">— en espera de calibración</span>
+  </div>
+
+  <div id="log-wrap"></div>
 </div>
 
-<script type="module">
-import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js';
-const $=id=>document.getElementById(id);
-
-/* ===== CONFIG ===== */
-const VIEW=14;            // medio-lado del área visible (m) — vista amplia para exteriores
-const ACC_NOISE=0.12, STILL_TIME=0.35, DAMP=0.9;
-// ganancia del filtro complementario GPS/IMU: cuánto "tira" el GPS hacia su lectura.
-// se modula por la precisión: mejor accuracy -> más ganancia.
-function gpsGain(accuracy){
-  // accuracy en metros: 5m -> ~0.18, 20m -> ~0.05, 50m+ -> ~0.02
-  return Math.max(0.02, Math.min(0.25, 3/(accuracy+3)));
-}
-
-/* ===== ESTADO ===== */
-const S={
-  live:false, hasGPS:false,
-  fused:new THREE.Vector3(),     // posición fusionada (m)
-  imu:new THREE.Vector3(),       // posición solo-IMU (para comparar deriva)
-  gps:new THREE.Vector3(),       // última posición GPS convertida a metros
-  vel:new THREE.Vector3(),
-  yaw:0, stillFor:0, lastAcc:0,
-  origin:null,                   // {lat, lon} de referencia
-  accuracy:null, lastFixMs:0, dist:0, lastFused:new THREE.Vector3()
+<script>
+/* ══════════════ ESTADO ══════════════ */
+const Estado={
+  fase:0,                  // 0 idle · 1 midiendo R · 2 R fijado · 3 recorriendo
+  origen:null,             // {x,y} en px (centro del canvas)
+  posUsuario:null,         // {x,y} en px — posición durante calibración
+  camPos:{x:0,y:0},        // posición relativa durante el recorrido (px)
+  R:0,                     // radio operativo (px)
+  pasos:0,
+  pasosLen:34,             // px por paso en el canvas (escala visual)
+  strideM:0.70,            // metros reales por paso
+  modoLibre:false,
+  heading:0,               // rumbo brújula (rad)
+  _huellasPos:[]
 };
 
-/* ===== THREE — vista cenital amplia ===== */
-const canvas=$('scene');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-const scene=new THREE.Scene();
-const camera=new THREE.PerspectiveCamera(50,1,0.1,500);
-camera.position.set(0,VIEW*1.5,VIEW*0.9); camera.lookAt(0,0,0);
-
-scene.add(new THREE.HemisphereLight(0xffffff,0x223044,1.0));
-const key=new THREE.DirectionalLight(0xffffff,.9);key.position.set(6,12,5);scene.add(key);
-
-// suelo con rejilla métrica
-const grid=new THREE.GridHelper(VIEW*2,VIEW*2,0x2a4a7d,0x162435);
-grid.material.transparent=true; grid.material.opacity=.5; scene.add(grid);
-// anillos de distancia (5,10 m)
-[5,10].forEach(r=>{
-  const ring=new THREE.Mesh(new THREE.RingGeometry(r-0.06,r+0.06,64),
-    new THREE.MeshBasicMaterial({color:0x2a4a7d,transparent:true,opacity:.5,side:THREE.DoubleSide}));
-  ring.rotation.x=-Math.PI/2; ring.position.y=0.01; scene.add(ring);
-});
-
-function ball(color,r,emissive){
-  return new THREE.Mesh(new THREE.SphereGeometry(r,28,28),
-    new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:emissive,metalness:.3,roughness:.35}));
-}
-const fusedBall=ball(0xc77dff,0.5,.3); scene.add(fusedBall);
-const gpsBall=ball(0x4d9fff,0.32,.25); gpsBall.material.transparent=true; gpsBall.material.opacity=.85; scene.add(gpsBall);
-const imuBall=ball(0x2de2a3,0.32,.25); imuBall.material.transparent=true; imuBall.material.opacity=.7; scene.add(imuBall);
-// círculo de precisión del GPS
-const accCircle=new THREE.Mesh(new THREE.RingGeometry(0.95,1.0,48),
-  new THREE.MeshBasicMaterial({color:0x4d9fff,transparent:true,opacity:.35,side:THREE.DoubleSide}));
-accCircle.rotation.x=-Math.PI/2; accCircle.position.y=0.02; scene.add(accCircle);
-
-// rastro de la fusión
-const MAXT=800, tp=new Float32Array(MAXT*3); let tl=0;
-const tg=new THREE.BufferGeometry(); tg.setAttribute('position',new THREE.BufferAttribute(tp,3));
-scene.add(new THREE.Line(tg,new THREE.LineBasicMaterial({color:0xc77dff,transparent:true,opacity:.6})));
-function pushTrail(x,z){ if(tl>=MAXT){tp.copyWithin(0,3);tl=MAXT-1;} tp[tl*3]=x;tp[tl*3+1]=0.05;tp[tl*3+2]=z;tl++;tg.setDrawRange(0,tl);tg.attributes.position.needsUpdate=true; }
-function clearTrail(){tl=0;tg.setDrawRange(0,0);}
-
-/* ===== CONVERSIÓN lat/lon -> metros (equirectangular local) ===== */
-const R_EARTH=6378137;
-function llToMeters(lat,lon,origin){
-  const dLat=THREE.MathUtils.degToRad(lat-origin.lat);
-  const dLon=THREE.MathUtils.degToRad(lon-origin.lon);
-  const x=dLon*Math.cos(THREE.MathUtils.degToRad(origin.lat))*R_EARTH;
-  const z=-dLat*R_EARTH; // norte hacia -Z
-  return {x,z};
+/* ══════════════ CANVAS ══════════════ */
+const canvas=document.getElementById('mainCanvas');
+const ctx=canvas.getContext('2d');
+const wrap=document.getElementById('canvas-wrap');
+function redimensionarCanvas(){
+  const rect=wrap.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=rect.width*dpr; canvas.height=rect.height*dpr;
+  ctx.setTransform(1,0,0,1,0,0); ctx.scale(dpr,dpr);
+  canvas._csW=rect.width; canvas._csH=rect.height;
 }
 
-/* ===== SENSORES INERCIALES (igual que el dead reckoning que te funcionó) ===== */
-function onOrient(e){ if(e.alpha!==null) S.yaw=THREE.MathUtils.degToRad(e.alpha); }
-let lastT=0;
-function onMotion(e){
-  if(!S.live) return;
-  const acc=e.acceleration;
-  if(!acc||acc.x===null) return;
-  const now=performance.now();
-  let dt=lastT?(now-lastT)/1000:0.016; lastT=now; dt=Math.min(dt,0.05);
-  let ax=acc.x, az=acc.y; const mag=Math.hypot(ax,az); S.lastAcc=mag;
-  if(mag<ACC_NOISE){ S.stillFor+=dt; if(S.stillFor>STILL_TIME) S.vel.multiplyScalar(0.6); }
-  else{
-    S.stillFor=0;
-    const c=Math.cos(S.yaw),s=Math.sin(S.yaw);
-    const wx=ax*c-az*s, wz=ax*s+az*c;
-    const eff=Math.max(0,mag-ACC_NOISE)/mag;
-    S.vel.x+=wx*eff*dt; S.vel.z+=wz*eff*dt;
+/* ══════════════ LOG ══════════════ */
+const logWrap=document.getElementById('log-wrap');
+function log(msg,tipo=''){
+  const a=new Date();
+  const ts=`${String(a.getSeconds()).padStart(2,'0')}.${String(a.getMilliseconds()).padStart(3,'0')}`;
+  const l=document.createElement('div'); l.className=`log-line ${tipo}`;
+  l.innerHTML=`<span class="ts">${ts}</span><span class="msg">${msg}</span>`;
+  logWrap.appendChild(l); logWrap.scrollTop=logWrap.scrollHeight;
+}
+
+/* ══════════════ ELASTIC CAPPING (tu algoritmo, intacto) ══════════════ */
+function elasticCapping(posReal,origen,R){
+  if(!R||R<=0) return {...posReal,ratio:0,atenuacion:0};
+  const dx=posReal.x-origen.x, dy=posReal.y-origen.y;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  const ratio=Math.min(dist/R,2.0);
+  if(dist<=0) return {x:origen.x,y:origen.y,ratio:0,atenuacion:0};
+  const zonaLibre=0.70;
+  if(ratio<=zonaLibre) return {x:posReal.x,y:posReal.y,ratio,atenuacion:0};
+  const exceso=(ratio-zonaLibre)/(1.0-zonaLibre);
+  const factorLog=Math.log(1+exceso*1.5)/Math.log(2.5);
+  const distEfectiva=R*zonaLibre+(R-R*zonaLibre)*(1-factorLog*0.65);
+  const norm=dist;
+  const x=origen.x+(dx/norm)*distEfectiva;
+  const y=origen.y+(dy/norm)*distEfectiva;
+  return {x,y,ratio:Math.min(ratio,1),atenuacion:Math.min(factorLog*100,100)};
+}
+
+/* ══════════════ DETECCIÓN DE PASOS (acelerómetro real) ══════════════ */
+const STEP={thresh:1.1,minInterval:280,lastStepMs:0,ema:0,emaA:0.85,armed:true};
+function detectStep(mag,now){
+  STEP.ema=STEP.emaA*STEP.ema+(1-STEP.emaA)*mag;
+  const dyn=mag-STEP.ema;
+  if(STEP.armed&&dyn>STEP.thresh&&(now-STEP.lastStepMs)>STEP.minInterval){
+    STEP.armed=false; STEP.lastStepMs=now; return true;
   }
-  S.vel.multiplyScalar(DAMP);
-  // integración: avanza tanto la fusión como la IMU-sola
-  const step=new THREE.Vector3(S.vel.x*dt,0,S.vel.z*dt);
-  S.fused.add(step);
-  S.imu.add(step);
+  if(dyn<STEP.thresh*0.3) STEP.armed=true;
+  return false;
 }
 
-/* ===== GPS ===== */
-let watchId=null;
-function startGPS(){
-  if(!('geolocation' in navigator)){ $('gateWarn').textContent='Este equipo no expone geolocalización.'; return false; }
-  watchId=navigator.geolocation.watchPosition(onGPS, onGPSErr,
-    {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
-  return true;
+/* ══════════════ SENSORES ══════════════ */
+function onOrient(e){ if(e.alpha!==null) Estado.heading=e.alpha*Math.PI/180; }
+function onMotion(e){
+  if(Estado.fase===0) return;
+  const a=e.accelerationIncludingGravity||e.acceleration;
+  if(!a||a.x===null) return;
+  const mag=Math.hypot(a.x,a.y,a.z);
+  if(detectStep(mag,performance.now())) onStep();
 }
-function onGPS(pos){
-  const {latitude,longitude,accuracy}=pos.coords;
-  S.accuracy=accuracy; S.lastFixMs=performance.now(); S.hasGPS=true;
-  if(!S.origin){ S.origin={lat:latitude,lon:longitude}; S.gps.set(0,0,0); return; }
-  const m=llToMeters(latitude,longitude,S.origin);
-  S.gps.set(m.x,0,m.z);
-  // ---- FILTRO COMPLEMENTARIO: el GPS corrige la fusión ----
-  const g=gpsGain(accuracy);
-  S.fused.x += (S.gps.x - S.fused.x)*g;
-  S.fused.z += (S.gps.z - S.fused.z)*g;
-}
-function onGPSErr(err){
-  $('t_fix').textContent='error';
-  if(err.code===1) $('gateWarn').textContent='Permiso de ubicación denegado.';
-}
+function onStep(){
+  // dirección del paso desde la brújula: alpha=0 norte (=arriba, -Y en canvas)
+  const dx=Math.sin(Estado.heading), dy=-Math.cos(Estado.heading);
+  const sd=document.getElementById('stepdot');
 
-/* ===== ACTIVAR ===== */
-async function activate(){
-  for(const Ev of [window.DeviceMotionEvent, window.DeviceOrientationEvent]){
-    if(Ev && typeof Ev.requestPermission==='function'){
-      try{ const r=await Ev.requestPermission(); }catch(e){}
-    }
+  if(Estado.fase===1){
+    // FASE CALIBRACIÓN: alejarse del origen contando pasos
+    Estado.pasos++;
+    Estado.posUsuario.x+=dx*Estado.pasosLen;
+    Estado.posUsuario.y+=dy*Estado.pasosLen;
+    Estado._huellasPos.push({...Estado.posUsuario});
+    document.getElementById('steps-count').textContent=Estado.pasos;
+    document.getElementById('step-bar').style.width=Math.min(Estado.pasos*12,100)+'%';
+    document.getElementById('btn-setR').disabled = Estado.pasos<1;
+    log(`Paso ${Estado.pasos} · dist ${(dist2origen()/Estado.pasosLen).toFixed(1)} u`);
+  }
+  else if(Estado.fase===3){
+    // FASE RECORRIDO: mover cámara con elastic capping
+    const real={x:Estado.origen.x+Estado.camPos.x+dx*Estado.pasosLen,
+                y:Estado.origen.y+Estado.camPos.y+dy*Estado.pasosLen};
+    const r=elasticCapping(real,Estado.origen,Estado.R);
+    Estado.camPos.x=r.x-Estado.origen.x;
+    Estado.camPos.y=r.y-Estado.origen.y;
+    if(r.atenuacion>5) log(`Elastic capping: ${r.atenuacion.toFixed(0)}% de frenado`,'warn');
+  }
+  sd.textContent=(Estado.fase===1?Estado.pasos:'•');
+  sd.classList.add('flash'); setTimeout(()=>sd.classList.remove('flash'),120);
+  dibujar(); actualizarHUD();
+}
+function dist2origen(){ const dx=Estado.posUsuario.x-Estado.origen.x,dy=Estado.posUsuario.y-Estado.origen.y; return Math.hypot(dx,dy); }
+
+/* ══════════════ FASES ══════════════ */
+async function fijarOrigen(){
+  // pedir permisos (iOS) e instalar listeners
+  for(const Ev of [window.DeviceMotionEvent,window.DeviceOrientationEvent]){
+    if(Ev&&typeof Ev.requestPermission==='function'){ try{ await Ev.requestPermission(); }catch(e){} }
   }
   if(window.DeviceMotionEvent) window.addEventListener('devicemotion',onMotion,true);
   if(window.DeviceOrientationEvent) window.addEventListener('deviceorientation',onOrient,true);
-  const ok=startGPS();
-  S.live=true; $('btnRecenter').disabled=false; $('gate').classList.add('hidden');
-}
-$('btnStart').addEventListener('click',activate);
-$('btnGateStart').addEventListener('click',activate);
+  document.getElementById('sensor-state').textContent='SENSORES: ON';
 
-/* ===== MARCAR ORIGEN (recentrar) ===== */
-$('btnRecenter').addEventListener('click',()=>{
-  S.origin=null;            // el próximo fix GPS define el nuevo origen
-  S.fused.set(0,0,0); S.imu.set(0,0,0); S.gps.set(0,0,0); S.vel.set(0,0,0);
-  S.dist=0; S.lastFused.set(0,0,0); clearTrail();
+  const W=canvas._csW,H=canvas._csH;
+  Estado.origen={x:W/2,y:H/2};
+  Estado.posUsuario={...Estado.origen};
+  Estado.fase=1; Estado.pasos=0; Estado._huellasPos=[];
+  document.getElementById('btn-origin').disabled=true;
+  document.getElementById('btn-step').disabled=false;
+  document.getElementById('overlay-hint').textContent='→ Camina hacia una pared. Tus pasos se cuentan solos.';
+  actualizarDots(1);
+  log('Origen fijado en el centro (0,0)','info');
+  log('Camina en línea recta hacia la pared más lejana','info');
+  dibujar(); actualizarHUD();
+}
+
+function fijarRadio(){
+  if(Estado.fase!==1||Estado.pasos<1) return;
+  Estado.R=dist2origen();
+  Estado.fase=2;
+  document.getElementById('btn-step').disabled=true;
+  document.getElementById('btn-setR').disabled=true;
+  document.getElementById('btn-move').disabled=false;
+  document.getElementById('overlay-hint').textContent='→ Radio fijado. Pulsa "Recentrar y recorrer".';
+  actualizarDots(2);
+  const metros=(Estado.R/Estado.pasosLen*Estado.strideM).toFixed(1);
+  log(`Radio R = ${(Estado.R/Estado.pasosLen).toFixed(1)} u ≈ ${metros} m (${Estado.pasos} pasos)`,'ok');
+  log('Zona libre: 70% interior. Borde 70–100%: elastic capping','info');
+  dibujar(); actualizarHUD();
+}
+
+function activarRecorrido(){
+  Estado.modoLibre=true; Estado.fase=3;
+  Estado.camPos={x:0,y:0};                  // RECENTRAR: vuelves al centro
+  document.getElementById('btn-move').disabled=true;
+  document.getElementById('overlay-hint').textContent='→ Camina: te mueves desde el centro, frenado en los bordes.';
+  setTimeout(()=>{document.getElementById('overlay-hint').style.opacity='0';},3500);
+  actualizarDots(3);
+  log('Recentrado al origen · Recorrido libre activado','ok');
+  log('Acércate al borde para ver el elastic capping','info');
+  dibujar(); actualizarHUD();
+}
+
+function resetear(){
+  Estado.fase=0; Estado.origen=null; Estado.posUsuario=null; Estado.R=0;
+  Estado.pasos=0; Estado.modoLibre=false; Estado.camPos={x:0,y:0}; Estado._huellasPos=[];
+  STEP.ema=0; STEP.armed=true;
+  document.getElementById('btn-origin').disabled=false;
+  document.getElementById('btn-step').disabled=true;
+  document.getElementById('btn-setR').disabled=true;
+  document.getElementById('btn-move').disabled=true;
+  document.getElementById('step-bar').style.width='0%';
+  document.getElementById('steps-count').textContent='0';
+  const oh=document.getElementById('overlay-hint'); oh.style.opacity='1'; oh.style.display='';
+  oh.textContent='→ Ponte en el CENTRO del espacio y fija el origen';
+  actualizarDots(0); actualizarHUD(); dibujar();
+  log('Sistema reiniciado · Listo para nueva calibración','info');
+}
+
+/* ══════════════ RENDER ══════════════ */
+function dibujar(){
+  const W=canvas._csW||300,H=canvas._csH||300;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0d1018'; ctx.fillRect(0,0,W,H);
+  // grilla
+  ctx.strokeStyle='rgba(30,37,53,.8)'; ctx.lineWidth=.5;
+  for(let x=0;x<=W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=0;y<=H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  if(!Estado.origen) return;
+  const ox=Estado.origen.x,oy=Estado.origen.y;
+
+  // Radio R y zonas
+  if(Estado.R>0){
+    const g=ctx.createRadialGradient(ox,oy,Estado.R*.7,ox,oy,Estado.R);
+    g.addColorStop(0,'rgba(255,75,110,0)'); g.addColorStop(1,'rgba(255,75,110,.18)');
+    ctx.beginPath();ctx.arc(ox,oy,Estado.R,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+    ctx.beginPath();ctx.arc(ox,oy,Estado.R*.7,0,Math.PI*2);ctx.fillStyle='rgba(0,229,255,.04)';ctx.fill();
+    ctx.beginPath();ctx.arc(ox,oy,Estado.R,0,Math.PI*2);ctx.strokeStyle='rgba(255,75,110,.7)';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.beginPath();ctx.arc(ox,oy,Estado.R*.7,0,Math.PI*2);ctx.strokeStyle='rgba(0,229,255,.4)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.stroke();ctx.setLineDash([]);
+  }
+  // huellas de calibración
+  Estado._huellasPos.forEach((h,i)=>{ctx.beginPath();ctx.arc(h.x,h.y,3,0,Math.PI*2);ctx.fillStyle=`rgba(255,75,110,${.3+i*.06})`;ctx.fill();});
+
+  // origen
+  ctx.strokeStyle='rgba(0,229,255,.5)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(ox-14,oy);ctx.lineTo(ox+14,oy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(ox,oy-14);ctx.lineTo(ox,oy+14);ctx.stroke();
+  ctx.beginPath();ctx.arc(ox,oy,5,0,Math.PI*2);ctx.fillStyle='#00e5ff';ctx.fill();
+  ctx.fillStyle='#00e5ff';ctx.font='bold 10px Courier New';ctx.fillText('(0,0)',ox+8,oy-8);
+
+  // posición usuario durante calibración
+  if(Estado.fase===1&&Estado.posUsuario){
+    const px=Estado.posUsuario.x,py=Estado.posUsuario.y;
+    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(px,py);ctx.strokeStyle='rgba(255,75,110,.5)';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.beginPath();ctx.arc(px,py,7,0,Math.PI*2);ctx.fillStyle='rgba(255,75,110,.25)';ctx.fill();ctx.strokeStyle='#ff4b6e';ctx.lineWidth=2;ctx.stroke();
+  }
+  // cámara durante recorrido
+  if(Estado.fase===3){
+    const cx=ox+Estado.camPos.x,cy=oy+Estado.camPos.y;
+    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(cx,cy);ctx.strokeStyle='rgba(127,255,106,.5)';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,cy,7,0,Math.PI*2);ctx.fillStyle='rgba(127,255,106,.2)';ctx.fill();ctx.strokeStyle='#7fff6a';ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle='#7fff6a';ctx.font='bold 10px Courier New';ctx.fillText('TÚ',cx+10,cy+4);
+  }
+}
+
+/* ══════════════ HUD + BARRA ELÁSTICA ══════════════ */
+function actualizarHUD(){
+  const hp=document.getElementById('hud-pos'),hr=document.getElementById('hud-r'),ha=document.getElementById('hud-atten');
+  if(!Estado.origen){hp.textContent='—';hr.textContent='—';ha.textContent='—';return;}
+  let rx=0,ry=0;
+  if(Estado.fase===3){rx=Estado.camPos.x;ry=Estado.camPos.y;}
+  else if(Estado.posUsuario){rx=Estado.posUsuario.x-Estado.origen.x;ry=Estado.posUsuario.y-Estado.origen.y;}
+  hp.textContent=`${(rx/Estado.pasosLen).toFixed(1)}, ${(ry/Estado.pasosLen).toFixed(1)}`;
+  hr.textContent=Estado.R>0?`${(Estado.R/Estado.pasosLen).toFixed(1)} u`:'—';
+  if(Estado.fase===3&&Estado.R>0){
+    const real={x:Estado.origen.x+Estado.camPos.x,y:Estado.origen.y+Estado.camPos.y};
+    const r=elasticCapping(real,Estado.origen,Estado.R);
+    ha.textContent=`${r.atenuacion.toFixed(0)}%`; actualizarElasticBar(r.ratio,r.atenuacion);
+  }else{ha.textContent='0%';actualizarElasticBar(0,0);}
+}
+function actualizarElasticBar(ratio,aten){
+  const fill=document.getElementById('elastic-bar-fill'),label=document.getElementById('elastic-label');
+  const pct=Math.min(ratio*100,100); fill.style.width=pct+'%';
+  if(ratio<0.70){fill.style.background='var(--accent3)';label.textContent=`${pct.toFixed(0)}% — zona libre, sin atenuación`;label.style.color='#7fff6a';}
+  else if(ratio<0.90){fill.style.background='#f5c542';label.textContent=`${pct.toFixed(0)}% — atenuación suave: ${aten.toFixed(0)}%`;label.style.color='#f5c542';}
+  else{fill.style.background='var(--accent2)';label.textContent=`${pct.toFixed(0)}% — ELASTIC CAPPING: ${aten.toFixed(0)}%`;label.style.color='var(--accent2)';}
+}
+function actualizarDots(p){
+  const labels=['Paso 1 de 3','Paso 2 de 3','Paso 3 de 3','Calibración completa'];
+  document.getElementById('step-label').textContent=labels[p]||'';
+  for(let i=0;i<3;i++){const d=document.getElementById('dot-'+i);d.className='step-dot';if(i<p)d.classList.add('done');else if(i===p)d.classList.add('active');}
+}
+function actualizarReloj(){const a=new Date();document.getElementById('clock').textContent=`${String(a.getHours()).padStart(2,'0')}:${String(a.getMinutes()).padStart(2,'0')}`;}
+
+/* ══════════════ INIT ══════════════ */
+document.getElementById('btn-origin').addEventListener('click',fijarOrigen);
+document.getElementById('btn-setR').addEventListener('click',fijarRadio);
+document.getElementById('btn-move').addEventListener('click',activarRecorrido);
+document.getElementById('btn-reset').addEventListener('click',resetear);
+document.getElementById('stride-range').addEventListener('input',e=>{
+  Estado.strideM=+e.target.value; document.getElementById('stride-val').textContent=Estado.strideM.toFixed(2)+' m';
+  actualizarHUD();
 });
-
-/* ===== LOOP ===== */
-let fc=0;
-function loop(){
-  // colocar esferas
-  fusedBall.position.set(S.fused.x,0.5,S.fused.z);
-  gpsBall.position.set(S.gps.x,0.32,S.gps.z);
-  imuBall.position.set(S.imu.x,0.32,S.imu.z);
-  // círculo de precisión (radio = accuracy en m, limitado para que no tape todo)
-  if(S.accuracy){ const r=Math.max(0.5,Math.min(VIEW,S.accuracy)); accCircle.scale.set(r,r,r); accCircle.position.set(S.gps.x,0.02,S.gps.z); accCircle.visible=true; }
-  else accCircle.visible=false;
-
-  // recorrido (de la fusión)
-  if(S.live){
-    const d=Math.hypot(S.fused.x-S.lastFused.x,S.fused.z-S.lastFused.z);
-    if(d>0.05){ S.dist+=d; S.lastFused.copy(S.fused); if(++fc%3===0) pushTrail(S.fused.x,S.fused.z); }
-  }
-
-  // estado: ¿GPS reciente o solo IMU?
-  const gpsFresh = S.hasGPS && (performance.now()-S.lastFixMs<4000);
-  if(S.live){
-    if(gpsFresh){ $('pill').className='pill gps'; $('pillTxt').textContent='GPS + IMU'; }
-    else{ $('pill').className='pill imu'; $('pillTxt').textContent='SOLO IMU (sin fix)'; }
-  }
-
-  // telemetría
-  $('t_fx').textContent=S.fused.x.toFixed(1)+' m';
-  $('t_fz').textContent=S.fused.z.toFixed(1)+' m';
-  $('t_acc').textContent=S.accuracy?('±'+S.accuracy.toFixed(0)+' m'):'— m';
-  $('t_fix').textContent=gpsFresh?'activo':(S.hasGPS?'antiguo':'esperando');
-  $('t_vel').textContent=S.vel.length().toFixed(2)+' m/s';
-  $('t_dist').textContent=S.dist.toFixed(1)+' m';
-
-  resize(); renderer.render(scene,camera); requestAnimationFrame(loop);
-}
-function resize(){const w=canvas.clientWidth,h=canvas.clientHeight;
-  if(canvas.width!==w*devicePixelRatio||canvas.height!==h*devicePixelRatio){
-    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}}
-resize(); requestAnimationFrame(loop);
-window.addEventListener('resize',resize);
+window.addEventListener('resize',()=>{redimensionarCanvas();dibujar();});
+redimensionarCanvas(); dibujar(); actualizarHUD(); actualizarReloj(); setInterval(actualizarReloj,30000);
+log('Sistema de calibración iniciado · sensores reales','info');
 </script>
 </body>
 </html>
