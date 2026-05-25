@@ -208,12 +208,20 @@ async function detect(){
 let session=null, refSpace=null, usedSpace=null;
 async function start(){
   if(!(caps.https && navigator.xr)) return;
+  $('gateWarn').style.color='var(--dim)';
+  $('gateWarn').textContent='Solicitando sesión AR…';
   try{
-    // dom-overlay permite que el HUD/telemetría se vean sobre la cámara
-    const init={optionalFeatures:['dom-overlay'], domOverlay:{root:$('overlay')}};
-    session=await navigator.xr.requestSession('immersive-ar', init);
+    // Intento 1: con dom-overlay (HUD sobre la cámara).
+    // Intento 2 (fallback): sin features, por si dom-overlay causa el rechazo.
+    try{
+      session=await navigator.xr.requestSession('immersive-ar',
+        {optionalFeatures:['dom-overlay'], domOverlay:{root:$('overlay')}});
+    }catch(e1){
+      $('gateWarn').textContent='Reintentando sin overlay…';
+      session=await navigator.xr.requestSession('immersive-ar');
+    }
 
-    // reference space en cascada
+    $('gateWarn').textContent='Configurando espacio de referencia…';
     refSpace=null;
     for(const type of ['local-floor','local','viewer']){
       try{ refSpace=await session.requestReferenceSpace(type); usedSpace=type; break; }
@@ -221,17 +229,16 @@ async function start(){
     }
     if(!refSpace) throw new Error('Ningún reference space disponible');
 
-    // CLAVE: fijar el tipo en Three.js ANTES de setSession
+    $('gateWarn').textContent='Iniciando render…';
     renderer.xr.enabled=true;
     renderer.xr.setReferenceSpaceType(usedSpace);
     await renderer.xr.setSession(session);
 
-    // si hay local-floor, el suelo de la rejilla coincide con el suelo real;
-    // si solo hay local, bajamos el mundo ~1.4m (altura típica del teléfono)
     world.position.y = (usedSpace==='local') ? -1.4 : 0;
 
     S.tracking=true; S.origin=null; S.distance=0;
     setPill('tracking'); $('gate').classList.add('hidden'); $('btnRecenter').disabled=false;
+    $('gateWarn').textContent='';
     $('howto').classList.add('show');
     if(usedSpace==='viewer'){
       $('howto').textContent='⚠ solo rotación · sin desplazamiento en este equipo';
@@ -240,9 +247,12 @@ async function start(){
     session.addEventListener('end',onEnd);
     renderer.setAnimationLoop(frame);
   }catch(e){
-    const msg=(e&&e.message)?e.message:String(e);
-    $('gateWarn').innerHTML='No se pudo iniciar: '+msg+
-      '<br><span style="color:var(--dim)">Verifica ARCore actualizado · Chrome actualizado · permiso de cámara.</span>';
+    const msg=(e&&e.name?e.name+': ':'')+((e&&e.message)?e.message:String(e));
+    $('gateWarn').style.color='var(--warn)';
+    $('gateWarn').innerHTML='⚠ '+msg+
+      '<br><span style="color:var(--dim)">Si dice NotAllowedError → falta permiso de cámara. '+
+      'Si dice NotSupportedError → el equipo no soporta la config. '+
+      'Prueba el ejemplo oficial: immersive-web.github.io/webxr-samples</span>';
   }
 }
 function onEnd(){
