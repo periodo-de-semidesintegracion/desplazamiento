@@ -174,23 +174,40 @@ for(let x=-2;x<=2;x++)for(let z=-2;z<=2;z++){
 
 /* ===== CAPACIDADES ===== */
 const caps={https:false,xr:false};
+// promesa con timeout para que isSessionSupported no cuelgue la UI
+function withTimeout(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), ms))
+  ]);
+}
 async function detect(){
   caps.https=location.protocol==='https:'||location.hostname==='localhost';
-  try{ caps.xr=!!(navigator.xr && await navigator.xr.isSessionSupported('immersive-ar')); }catch(e){caps.xr=false;}
+  let xrTimedOut=false;
+  try{
+    if(navigator.xr){
+      caps.xr=!!(await withTimeout(navigator.xr.isSessionSupported('immersive-ar'), 3000));
+    }else{ caps.xr=false; }
+  }catch(e){
+    // si fue timeout, no afirmamos que no exista: dejamos intentar
+    if(e.message==='timeout' && navigator.xr){ xrTimedOut=true; caps.xr=true; }
+    else caps.xr=false;
+  }
   $('cap').innerHTML=
     `<b>HTTPS</b> ${caps.https?'<span class="ok">✓</span>':'<span class="no">✗ requerido</span>'}<br>`+
-    `<b>WebXR AR</b> ${caps.xr?'<span class="ok">✓ disponible</span>':'<span class="no">✗ no soportado</span>'}<br>`+
+    `<b>WebXR AR</b> ${caps.xr?(xrTimedOut?'<span class="ok">⏱ asumido — pulsa para probar</span>':'<span class="ok">✓ disponible</span>'):'<span class="no">✗ no soportado</span>'}<br>`+
     `<b>Modo</b> primera persona · referentes anclados`;
-  const ready=caps.https&&caps.xr;
+  // habilitamos los botones si hay HTTPS y (XR soportado o navigator.xr existe)
+  const ready=caps.https && (caps.xr || !!navigator.xr);
   ['btnStart','btnGateStart'].forEach(id=>{$(id).disabled=!ready;$(id).textContent=ready?'Iniciar AR':'No disponible';});
   if(!caps.https) $('gateWarn').textContent='⚠ Necesita HTTPS. Sírvelo por https:// o localhost.';
-  else if(!caps.xr) $('gateWarn').textContent='⚠ Este equipo/navegador no soporta WebXR AR.';
+  else if(!navigator.xr) $('gateWarn').textContent='⚠ Este navegador no expone WebXR (navigator.xr).';
 }
 
 /* ===== WEBXR (primera persona) ===== */
 let session=null, refSpace=null, usedSpace=null;
 async function start(){
-  if(!(caps.https&&caps.xr)) return;
+  if(!(caps.https && navigator.xr)) return;
   try{
     // dom-overlay permite que el HUD/telemetría se vean sobre la cámara
     const init={optionalFeatures:['dom-overlay'], domOverlay:{root:$('overlay')}};
