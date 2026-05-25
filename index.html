@@ -3,48 +3,50 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Desplazamiento por IMU · Dead Reckoning (sin ARCore)</title>
+<title>Fusión GPS + IMU · Desplazamiento adaptativo</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600;800&display=swap');
   :root{
     --bg:#080b11;--panel:rgba(16,21,30,.84);--edge:#1e2836;
-    --ink:#e9eef3;--dim:#67727f;--person:#2de2a3;--room:#5b8cff;--accent:#c77dff;--warn:#ff5a4d;
+    --ink:#e9eef3;--dim:#67727f;--imu:#2de2a3;--gps:#4d9fff;--fused:#c77dff;--warn:#ff5a4d;
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;background:var(--bg);color:var(--ink);font-family:'Sora',sans-serif;overflow:hidden;}
   body{background-image:
-    radial-gradient(circle at 20% 8%,rgba(45,226,163,.07),transparent 42%),
-    radial-gradient(circle at 82% 92%,rgba(91,140,255,.08),transparent 42%);}
+    radial-gradient(circle at 20% 8%,rgba(45,226,163,.06),transparent 42%),
+    radial-gradient(circle at 82% 92%,rgba(77,159,255,.07),transparent 42%);}
   #scene{position:fixed;inset:0;width:100%;height:100%;display:block;}
 
   .hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:flex;justify-content:space-between;gap:12px;pointer-events:none;z-index:5;}
-  .tag{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--person);
+  .tag{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--fused);
     border:1px solid var(--edge);padding:3px 8px;border-radius:2px;background:rgba(8,11,17,.6);backdrop-filter:blur(8px);}
   .title h1{font-size:16px;font-weight:800;letter-spacing:-.4px;margin-top:7px;line-height:1;}
-  .title h1 em{font-style:normal;color:var(--person);}
+  .title h1 em{font-style:normal;color:var(--fused);}
   .pill{pointer-events:none;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;padding:6px 11px;border-radius:20px;
     background:rgba(8,11,17,.65);backdrop-filter:blur(8px);border:1px solid var(--edge);display:flex;align-items:center;gap:7px;white-space:nowrap;}
   .pill .d{width:7px;height:7px;border-radius:50%;box-shadow:0 0 8px currentColor;}
-  .pill.live{color:var(--person);} .pill.live .d{background:var(--person);}
+  .pill.gps{color:var(--gps);} .pill.gps .d{background:var(--gps);}
+  .pill.imu{color:var(--imu);} .pill.imu .d{background:var(--imu);}
   .pill.idle{color:var(--dim);} .pill.idle .d{background:var(--dim);}
-  .pill.still{color:var(--accent);} .pill.still .d{background:var(--accent);}
 
-  .telemetry{position:fixed;left:16px;bottom:100px;font-family:'Space Mono',monospace;font-size:11px;line-height:1.7;
-    background:rgba(8,11,17,.6);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:10px;padding:11px 13px;pointer-events:none;min-width:156px;z-index:5;}
-  .telemetry .row{display:flex;justify-content:space-between;gap:16px;}
-  .telemetry .lbl{color:var(--dim);} .telemetry .vp{color:var(--person);} .telemetry .vv{color:var(--room);}
+  .telemetry{position:fixed;left:16px;bottom:96px;font-family:'Space Mono',monospace;font-size:11px;line-height:1.7;
+    background:rgba(8,11,17,.6);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:10px;padding:11px 13px;pointer-events:none;min-width:178px;z-index:5;}
+  .telemetry .row{display:flex;justify-content:space-between;gap:14px;}
+  .telemetry .lbl{color:var(--dim);}
+  .telemetry .vf{color:var(--fused);} .telemetry .vg{color:var(--gps);} .telemetry .vi{color:var(--imu);}
   .telemetry hr{border:none;border-top:1px solid var(--edge);margin:7px 0;}
+  .telemetry .small{font-size:9px;color:var(--dim);}
 
-  .driftbar{position:fixed;left:16px;bottom:78px;width:156px;z-index:5;pointer-events:none;}
-  .driftbar .lab{font-family:'Space Mono',monospace;font-size:9px;color:var(--dim);margin-bottom:3px;display:flex;justify-content:space-between;}
-  .driftbar .track{height:4px;background:#0c1118;border-radius:3px;overflow:hidden;}
-  .driftbar .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--person),var(--warn));transition:width .2s;}
+  .legend{position:fixed;right:16px;bottom:96px;font-family:'Space Mono',monospace;font-size:10px;line-height:1.8;
+    background:rgba(8,11,17,.6);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:10px;padding:10px 12px;pointer-events:none;z-index:5;}
+  .legend .it{display:flex;align-items:center;gap:7px;color:var(--dim);}
+  .legend .sw{width:14px;height:3px;border-radius:2px;}
 
   .dock{position:fixed;left:0;right:0;bottom:0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));
     background:var(--panel);backdrop-filter:blur(16px);border-top:1px solid var(--edge);border-radius:18px 18px 0 0;display:flex;gap:10px;z-index:5;}
   .btn{flex:1;padding:14px;border:none;border-radius:12px;font-family:'Sora',sans-serif;font-weight:800;font-size:14px;cursor:pointer;transition:transform .08s ease,box-shadow .2s;}
   .btn:active{transform:scale(.96);}
-  .btn-primary{background:var(--person);color:#04130d;box-shadow:0 4px 20px rgba(45,226,163,.3);}
+  .btn-primary{background:var(--fused);color:#1a0533;box-shadow:0 4px 20px rgba(199,125,255,.3);}
   .btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--edge);}
   .btn[disabled]{opacity:.4;pointer-events:none;}
 
@@ -53,48 +55,54 @@
   .gate.hidden{display:none;}
   .gate .tag{margin-bottom:18px;}
   .gate h2{font-size:24px;font-weight:800;letter-spacing:-.6px;line-height:1.12;margin-bottom:12px;max-width:320px;}
-  .gate h2 em{font-style:normal;color:var(--person);}
-  .gate p{color:var(--dim);font-weight:300;font-size:13px;line-height:1.6;max-width:320px;margin-bottom:8px;}
-  .gate .disc{background:rgba(255,90,77,.08);border:1px solid rgba(255,90,77,.3);border-radius:10px;
-    padding:13px 15px;max-width:330px;margin:14px 0 20px;font-size:12px;line-height:1.55;color:#ffb3ad;text-align:left;}
-  .gate .disc b{color:var(--warn);}
-  .gate .btn{max-width:320px;width:100%;}
-  .warnmsg{color:var(--warn);font-size:11px;font-family:'Space Mono',monospace;margin-top:14px;max-width:320px;line-height:1.5;}
+  .gate h2 em{font-style:normal;color:var(--fused);}
+  .gate p{color:var(--dim);font-weight:300;font-size:13px;line-height:1.6;max-width:330px;margin-bottom:8px;}
+  .gate .info{background:rgba(77,159,255,.07);border:1px solid rgba(77,159,255,.28);border-radius:10px;
+    padding:13px 15px;max-width:340px;margin:14px 0 20px;font-size:12px;line-height:1.55;color:#bcd6ff;text-align:left;}
+  .gate .info b{color:var(--gps);}
+  .gate .btn{max-width:340px;width:100%;}
+  .warnmsg{color:var(--warn);font-size:11px;font-family:'Space Mono',monospace;margin-top:14px;max-width:340px;line-height:1.5;}
 </style>
 </head>
 <body>
 <canvas id="scene"></canvas>
 
 <div class="hud">
-  <div class="title"><span class="tag">Dead Reckoning · IMU</span><h1>Desplazamiento <em>estimado</em></h1></div>
+  <div class="title"><span class="tag">GPS + IMU Fusion</span><h1>Desplazamiento <em>fusionado</em></h1></div>
   <div id="pill" class="pill idle"><span class="d"></span><span id="pillTxt">EN ESPERA</span></div>
 </div>
 
 <div class="telemetry">
-  <div class="row"><span class="lbl">pos X</span><span class="vp" id="t_x">0.00 m</span></div>
-  <div class="row"><span class="lbl">pos Z</span><span class="vp" id="t_z">0.00 m</span></div>
+  <div class="row"><span class="lbl">pos fusión X</span><span class="vf" id="t_fx">0.0 m</span></div>
+  <div class="row"><span class="lbl">pos fusión Z</span><span class="vf" id="t_fz">0.0 m</span></div>
   <hr>
-  <div class="row"><span class="lbl">vel</span><span class="vv" id="t_v">0.00 m/s</span></div>
-  <div class="row"><span class="lbl">|acel|</span><span class="vv" id="t_a">0.00</span></div>
+  <div class="row"><span class="lbl vg">GPS ±</span><span class="vg" id="t_acc">— m</span></div>
+  <div class="row"><span class="lbl vg">GPS fix</span><span class="vg" id="t_fix">esperando</span></div>
+  <div class="row"><span class="lbl vi">IMU vel</span><span class="vi" id="t_vel">0.00 m/s</span></div>
+  <hr>
+  <div class="row"><span class="lbl">recorrido</span><span class="vf" id="t_dist">0.0 m</span></div>
+  <div class="small" id="t_scale">escala: auto</div>
 </div>
-<div class="driftbar">
-  <div class="lab"><span>incertidumbre</span><span id="driftPct">0%</span></div>
-  <div class="track"><div class="fill" id="driftFill"></div></div>
+
+<div class="legend">
+  <div class="it"><span class="sw" style="background:var(--fused)"></span> fusión</div>
+  <div class="it"><span class="sw" style="background:var(--gps)"></span> GPS crudo</div>
+  <div class="it"><span class="sw" style="background:var(--imu)"></span> IMU sola</div>
 </div>
 
 <div class="dock">
-  <button class="btn btn-ghost" id="btnRecenter" disabled>↺ Recentrar</button>
-  <button class="btn btn-primary" id="btnStart">Activar sensores</button>
+  <button class="btn btn-ghost" id="btnRecenter" disabled>↺ Marcar origen</button>
+  <button class="btn btn-primary" id="btnStart">Activar GPS + sensores</button>
 </div>
 
 <div class="gate" id="gate">
-  <span class="tag">Pedestrian Dead Reckoning</span>
-  <h2>Desplazamiento por<br><em>doble integración</em></h2>
-  <p>La esfera estima tu posición integrando el acelerómetro del teléfono, sin ARCore.</p>
-  <div class="disc">
-    <b>⚠ Lee esto primero.</b> Sin la cámara/ARCore, esta estimación <b>deriva</b>: la esfera se moverá sola aunque estés quieto, y el error crece con el tiempo. Apliqué correcciones (ZUPT, damping) que lo mitigan, pero no lo eliminan. Es una demostración honesta del método, <b>no</b> un tracking fiable. Usa "Recentrar" a menudo.
+  <span class="tag">Filtro complementario GPS·IMU</span>
+  <h2>El GPS ancla,<br>la <em>IMU</em> suaviza</h2>
+  <p>Combina lo mejor de cada fuente: el GPS da posición absoluta que no deriva pero es lenta y ruidosa; el acelerómetro es rápido pero deriva. Juntos se compensan.</p>
+  <div class="info">
+    <b>Para exteriores.</b> Sal a un espacio abierto con vista al cielo y camina. En interiores el GPS falla y el sistema cae solo a la IMU (con deriva). La esfera morada es la fusión; verás también el GPS crudo (azul) y la IMU sola (verde) para comparar.
   </div>
-  <button class="btn btn-primary" id="btnGateStart">Entiendo · Activar sensores</button>
+  <button class="btn btn-primary" id="btnGateStart">Activar GPS + sensores</button>
   <div class="warnmsg" id="gateWarn"></div>
 </div>
 
@@ -103,169 +111,186 @@ import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/
 const $=id=>document.getElementById(id);
 
 /* ===== CONFIG ===== */
-const ROOM=3.0, PERSON_R=0.18, LIMIT=ROOM-PERSON_R;
-// Parámetros del dead reckoning (ajustables)
-const ACC_NOISE=0.12;     // m/s² — por debajo de esto, se considera ruido
-const STILL_TIME=0.35;    // s quieto para disparar ZUPT (velocidad->0)
-const DAMP=0.92;          // decaimiento de velocidad por frame (frena deriva)
-const DRIFT_RATE=0.6;     // % de incertidumbre acumulada por segundo en movimiento
+const VIEW=14;            // medio-lado del área visible (m) — vista amplia para exteriores
+const ACC_NOISE=0.12, STILL_TIME=0.35, DAMP=0.9;
+// ganancia del filtro complementario GPS/IMU: cuánto "tira" el GPS hacia su lectura.
+// se modula por la precisión: mejor accuracy -> más ganancia.
+function gpsGain(accuracy){
+  // accuracy en metros: 5m -> ~0.18, 20m -> ~0.05, 50m+ -> ~0.02
+  return Math.max(0.02, Math.min(0.25, 3/(accuracy+3)));
+}
 
 /* ===== ESTADO ===== */
 const S={
-  live:false,
-  pos:new THREE.Vector3(),     // posición estimada (m), plano XZ
-  vel:new THREE.Vector3(),     // velocidad estimada (m/s)
-  yaw:0,                        // orientación (rad) para proyectar la aceleración al mundo
-  stillFor:0,                   // tiempo acumulado casi-quieto
-  drift:0,                      // incertidumbre acumulada (0..100)
-  lastAcc:0
+  live:false, hasGPS:false,
+  fused:new THREE.Vector3(),     // posición fusionada (m)
+  imu:new THREE.Vector3(),       // posición solo-IMU (para comparar deriva)
+  gps:new THREE.Vector3(),       // última posición GPS convertida a metros
+  vel:new THREE.Vector3(),
+  yaw:0, stillFor:0, lastAcc:0,
+  origin:null,                   // {lat, lon} de referencia
+  accuracy:null, lastFixMs:0, dist:0, lastFused:new THREE.Vector3()
 };
 
-/* ===== THREE — vista en tercera persona del cuarto ===== */
+/* ===== THREE — vista cenital amplia ===== */
 const canvas=$('scene');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 const scene=new THREE.Scene();
-const camera=new THREE.PerspectiveCamera(50,1,0.1,100);
-camera.position.set(ROOM*1.9,ROOM*1.7,ROOM*1.9); camera.lookAt(0,0,0);
+const camera=new THREE.PerspectiveCamera(50,1,0.1,500);
+camera.position.set(0,VIEW*1.5,VIEW*0.9); camera.lookAt(0,0,0);
 
 scene.add(new THREE.HemisphereLight(0xffffff,0x223044,1.0));
-const key=new THREE.DirectionalLight(0xffffff,1.0);key.position.set(5,9,6);scene.add(key);
+const key=new THREE.DirectionalLight(0xffffff,.9);key.position.set(6,12,5);scene.add(key);
 
-// cuarto
-const roomGeo=new THREE.BoxGeometry(ROOM*2,ROOM*2,ROOM*2);
-scene.add(new THREE.LineSegments(new THREE.EdgesGeometry(roomGeo),
-  new THREE.LineBasicMaterial({color:0x5b8cff,transparent:true,opacity:.5})));
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(ROOM*2,ROOM*2),
-  new THREE.MeshStandardMaterial({color:0x0c1424,metalness:.2,roughness:.75,transparent:true,opacity:.65,side:THREE.DoubleSide}));
-floor.rotation.x=-Math.PI/2; floor.position.y=-ROOM; scene.add(floor);
-const fgrid=new THREE.GridHelper(ROOM*2,12,0x2a4a7d,0x182942);
-fgrid.position.y=-ROOM+.01; scene.add(fgrid);
+// suelo con rejilla métrica
+const grid=new THREE.GridHelper(VIEW*2,VIEW*2,0x2a4a7d,0x162435);
+grid.material.transparent=true; grid.material.opacity=.5; scene.add(grid);
+// anillos de distancia (5,10 m)
+[5,10].forEach(r=>{
+  const ring=new THREE.Mesh(new THREE.RingGeometry(r-0.06,r+0.06,64),
+    new THREE.MeshBasicMaterial({color:0x2a4a7d,transparent:true,opacity:.5,side:THREE.DoubleSide}));
+  ring.rotation.x=-Math.PI/2; ring.position.y=0.01; scene.add(ring);
+});
 
-// esfera-persona
-const person=new THREE.Mesh(new THREE.SphereGeometry(PERSON_R,32,32),
-  new THREE.MeshStandardMaterial({color:0x2de2a3,metalness:.3,roughness:.3,emissive:0x2de2a3,emissiveIntensity:.25}));
-scene.add(person);
-// flecha de orientación (hacia dónde "mira")
-const arrow=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.28,16),
-  new THREE.MeshStandardMaterial({color:0x2de2a3,emissive:0x2de2a3,emissiveIntensity:.5}));
-person.add(arrow); arrow.position.set(0,0,-PERSON_R-0.18); arrow.rotation.x=-Math.PI/2;
-// halo al suelo
-const proj=new THREE.Mesh(new THREE.RingGeometry(PERSON_R*1.1,PERSON_R*1.4,28),
-  new THREE.MeshBasicMaterial({color:0x2de2a3,transparent:true,opacity:.5,side:THREE.DoubleSide}));
-proj.rotation.x=-Math.PI/2; scene.add(proj);
-
-// rastro
-const MAXT=600, trailPos=new Float32Array(MAXT*3); let trailLen=0;
-const trailGeo=new THREE.BufferGeometry(); trailGeo.setAttribute('position',new THREE.BufferAttribute(trailPos,3));
-scene.add(new THREE.Line(trailGeo,new THREE.LineBasicMaterial({color:0xc77dff,transparent:true,opacity:.7})));
-
-function place(){
-  const x=Math.max(-LIMIT,Math.min(LIMIT,S.pos.x));
-  const z=Math.max(-LIMIT,Math.min(LIMIT,S.pos.z));
-  person.position.set(x,-ROOM+PERSON_R,z);
-  person.rotation.y=S.yaw;
-  proj.position.set(x,-ROOM+.02,z);
+function ball(color,r,emissive){
+  return new THREE.Mesh(new THREE.SphereGeometry(r,28,28),
+    new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:emissive,metalness:.3,roughness:.35}));
 }
-function pushTrail(){
-  const x=Math.max(-LIMIT,Math.min(LIMIT,S.pos.x)), z=Math.max(-LIMIT,Math.min(LIMIT,S.pos.z));
-  if(trailLen>=MAXT){trailPos.copyWithin(0,3);trailLen=MAXT-1;}
-  trailPos[trailLen*3]=x;trailPos[trailLen*3+1]=-ROOM+PERSON_R;trailPos[trailLen*3+2]=z;
-  trailLen++;trailGeo.setDrawRange(0,trailLen);trailGeo.attributes.position.needsUpdate=true;
-}
-function clearTrail(){trailLen=0;trailGeo.setDrawRange(0,0);}
+const fusedBall=ball(0xc77dff,0.5,.3); scene.add(fusedBall);
+const gpsBall=ball(0x4d9fff,0.32,.25); gpsBall.material.transparent=true; gpsBall.material.opacity=.85; scene.add(gpsBall);
+const imuBall=ball(0x2de2a3,0.32,.25); imuBall.material.transparent=true; imuBall.material.opacity=.7; scene.add(imuBall);
+// círculo de precisión del GPS
+const accCircle=new THREE.Mesh(new THREE.RingGeometry(0.95,1.0,48),
+  new THREE.MeshBasicMaterial({color:0x4d9fff,transparent:true,opacity:.35,side:THREE.DoubleSide}));
+accCircle.rotation.x=-Math.PI/2; accCircle.position.y=0.02; scene.add(accCircle);
 
-/* ===== SENSORES ===== */
+// rastro de la fusión
+const MAXT=800, tp=new Float32Array(MAXT*3); let tl=0;
+const tg=new THREE.BufferGeometry(); tg.setAttribute('position',new THREE.BufferAttribute(tp,3));
+scene.add(new THREE.Line(tg,new THREE.LineBasicMaterial({color:0xc77dff,transparent:true,opacity:.6})));
+function pushTrail(x,z){ if(tl>=MAXT){tp.copyWithin(0,3);tl=MAXT-1;} tp[tl*3]=x;tp[tl*3+1]=0.05;tp[tl*3+2]=z;tl++;tg.setDrawRange(0,tl);tg.attributes.position.needsUpdate=true; }
+function clearTrail(){tl=0;tg.setDrawRange(0,0);}
+
+/* ===== CONVERSIÓN lat/lon -> metros (equirectangular local) ===== */
+const R_EARTH=6378137;
+function llToMeters(lat,lon,origin){
+  const dLat=THREE.MathUtils.degToRad(lat-origin.lat);
+  const dLon=THREE.MathUtils.degToRad(lon-origin.lon);
+  const x=dLon*Math.cos(THREE.MathUtils.degToRad(origin.lat))*R_EARTH;
+  const z=-dLat*R_EARTH; // norte hacia -Z
+  return {x,z};
+}
+
+/* ===== SENSORES INERCIALES (igual que el dead reckoning que te funcionó) ===== */
 function onOrient(e){ if(e.alpha!==null) S.yaw=THREE.MathUtils.degToRad(e.alpha); }
-
 let lastT=0;
 function onMotion(e){
   if(!S.live) return;
-  const acc=e.acceleration; // sin gravedad (linear acceleration)
-  if(!acc || acc.x===null){ return; } // algunos equipos no dan 'acceleration' limpia
+  const acc=e.acceleration;
+  if(!acc||acc.x===null) return;
   const now=performance.now();
-  let dt=lastT? (now-lastT)/1000 : 0.016; lastT=now;
-  dt=Math.min(dt,0.05);
-
-  // magnitud horizontal de la aceleración (ignoramos vertical para caminar)
-  let ax=acc.x, az=acc.y; // en muchos equipos y del teléfono ~ avance
-  const mag=Math.hypot(ax,az);
-  S.lastAcc=mag;
-
-  // ---- ZUPT: si está casi quieto, frena la velocidad ----
-  if(mag<ACC_NOISE){
-    S.stillFor+=dt;
-    if(S.stillFor>STILL_TIME){ S.vel.multiplyScalar(0.6); } // amortigua fuerte
-  }else{
+  let dt=lastT?(now-lastT)/1000:0.016; lastT=now; dt=Math.min(dt,0.05);
+  let ax=acc.x, az=acc.y; const mag=Math.hypot(ax,az); S.lastAcc=mag;
+  if(mag<ACC_NOISE){ S.stillFor+=dt; if(S.stillFor>STILL_TIME) S.vel.multiplyScalar(0.6); }
+  else{
     S.stillFor=0;
-    // proyectar la aceleración al marco del mundo según el yaw
-    const cos=Math.cos(S.yaw), sin=Math.sin(S.yaw);
-    const wx= ax*cos - az*sin;
-    const wz= ax*sin + az*cos;
-    // umbral de ruido: solo integramos lo que supera el piso
+    const c=Math.cos(S.yaw),s=Math.sin(S.yaw);
+    const wx=ax*c-az*s, wz=ax*s+az*c;
     const eff=Math.max(0,mag-ACC_NOISE)/mag;
-    S.vel.x+=wx*eff*dt;
-    S.vel.z+=wz*eff*dt;
-    // acumular incertidumbre mientras hay movimiento integrado
-    S.drift=Math.min(100,S.drift+DRIFT_RATE*100*dt);
+    S.vel.x+=wx*eff*dt; S.vel.z+=wz*eff*dt;
   }
-  // damping permanente (frena la deriva descontrolada)
   S.vel.multiplyScalar(DAMP);
-  // integrar posición
-  S.pos.x+=S.vel.x*dt;
-  S.pos.z+=S.vel.z*dt;
-  // clamp a las paredes
-  S.pos.x=Math.max(-LIMIT,Math.min(LIMIT,S.pos.x));
-  S.pos.z=Math.max(-LIMIT,Math.min(LIMIT,S.pos.z));
+  // integración: avanza tanto la fusión como la IMU-sola
+  const step=new THREE.Vector3(S.vel.x*dt,0,S.vel.z*dt);
+  S.fused.add(step);
+  S.imu.add(step);
 }
 
+/* ===== GPS ===== */
+let watchId=null;
+function startGPS(){
+  if(!('geolocation' in navigator)){ $('gateWarn').textContent='Este equipo no expone geolocalización.'; return false; }
+  watchId=navigator.geolocation.watchPosition(onGPS, onGPSErr,
+    {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
+  return true;
+}
+function onGPS(pos){
+  const {latitude,longitude,accuracy}=pos.coords;
+  S.accuracy=accuracy; S.lastFixMs=performance.now(); S.hasGPS=true;
+  if(!S.origin){ S.origin={lat:latitude,lon:longitude}; S.gps.set(0,0,0); return; }
+  const m=llToMeters(latitude,longitude,S.origin);
+  S.gps.set(m.x,0,m.z);
+  // ---- FILTRO COMPLEMENTARIO: el GPS corrige la fusión ----
+  const g=gpsGain(accuracy);
+  S.fused.x += (S.gps.x - S.fused.x)*g;
+  S.fused.z += (S.gps.z - S.fused.z)*g;
+}
+function onGPSErr(err){
+  $('t_fix').textContent='error';
+  if(err.code===1) $('gateWarn').textContent='Permiso de ubicación denegado.';
+}
+
+/* ===== ACTIVAR ===== */
 async function activate(){
-  const D=typeof DeviceMotionEvent!=='undefined', O=typeof DeviceOrientationEvent!=='undefined';
-  if(!D){ $('gateWarn').textContent='Este equipo no expone DeviceMotion.'; return; }
-  // permiso iOS (en Android suele no requerirse)
-  for(const Ev of [DeviceMotionEvent, DeviceOrientationEvent]){
+  for(const Ev of [window.DeviceMotionEvent, window.DeviceOrientationEvent]){
     if(Ev && typeof Ev.requestPermission==='function'){
-      try{ const r=await Ev.requestPermission(); if(r!=='granted'){ $('gateWarn').textContent='Permiso denegado.'; return; } }
-      catch(err){ /* en Android lanza, se ignora */ }
+      try{ const r=await Ev.requestPermission(); }catch(e){}
     }
   }
-  window.addEventListener('devicemotion',onMotion,true);
-  if(O) window.addEventListener('deviceorientation',onOrient,true);
+  if(window.DeviceMotionEvent) window.addEventListener('devicemotion',onMotion,true);
+  if(window.DeviceOrientationEvent) window.addEventListener('deviceorientation',onOrient,true);
+  const ok=startGPS();
   S.live=true; $('btnRecenter').disabled=false; $('gate').classList.add('hidden');
-  $('pill').className='pill live'; $('pillTxt').textContent='INTEGRANDO';
 }
 $('btnStart').addEventListener('click',activate);
 $('btnGateStart').addEventListener('click',activate);
 
-/* ===== RECENTRAR ===== */
+/* ===== MARCAR ORIGEN (recentrar) ===== */
 $('btnRecenter').addEventListener('click',()=>{
-  S.pos.set(0,0,0); S.vel.set(0,0,0); S.drift=0; S.stillFor=0; clearTrail();
+  S.origin=null;            // el próximo fix GPS define el nuevo origen
+  S.fused.set(0,0,0); S.imu.set(0,0,0); S.gps.set(0,0,0); S.vel.set(0,0,0);
+  S.dist=0; S.lastFused.set(0,0,0); clearTrail();
 });
 
-/* ===== LOOP RENDER ===== */
-let frameC=0;
+/* ===== LOOP ===== */
+let fc=0;
 function loop(){
-  place();
-  if(S.live && (++frameC%6===0)) pushTrail();
-  // pill: still vs live
+  // colocar esferas
+  fusedBall.position.set(S.fused.x,0.5,S.fused.z);
+  gpsBall.position.set(S.gps.x,0.32,S.gps.z);
+  imuBall.position.set(S.imu.x,0.32,S.imu.z);
+  // círculo de precisión (radio = accuracy en m, limitado para que no tape todo)
+  if(S.accuracy){ const r=Math.max(0.5,Math.min(VIEW,S.accuracy)); accCircle.scale.set(r,r,r); accCircle.position.set(S.gps.x,0.02,S.gps.z); accCircle.visible=true; }
+  else accCircle.visible=false;
+
+  // recorrido (de la fusión)
   if(S.live){
-    if(S.stillFor>STILL_TIME){ $('pill').className='pill still'; $('pillTxt').textContent='QUIETO (ZUPT)'; }
-    else { $('pill').className='pill live'; $('pillTxt').textContent='INTEGRANDO'; }
+    const d=Math.hypot(S.fused.x-S.lastFused.x,S.fused.z-S.lastFused.z);
+    if(d>0.05){ S.dist+=d; S.lastFused.copy(S.fused); if(++fc%3===0) pushTrail(S.fused.x,S.fused.z); }
   }
-  // decaimiento lento de la incertidumbre cuando estás quieto
-  if(S.stillFor>STILL_TIME) S.drift=Math.max(0,S.drift-0.3);
-  $('t_x').textContent=S.pos.x.toFixed(2)+' m';
-  $('t_z').textContent=S.pos.z.toFixed(2)+' m';
-  $('t_v').textContent=S.vel.length().toFixed(2)+' m/s';
-  $('t_a').textContent=S.lastAcc.toFixed(2);
-  $('driftFill').style.width=S.drift.toFixed(0)+'%';
-  $('driftPct').textContent=S.drift.toFixed(0)+'%';
+
+  // estado: ¿GPS reciente o solo IMU?
+  const gpsFresh = S.hasGPS && (performance.now()-S.lastFixMs<4000);
+  if(S.live){
+    if(gpsFresh){ $('pill').className='pill gps'; $('pillTxt').textContent='GPS + IMU'; }
+    else{ $('pill').className='pill imu'; $('pillTxt').textContent='SOLO IMU (sin fix)'; }
+  }
+
+  // telemetría
+  $('t_fx').textContent=S.fused.x.toFixed(1)+' m';
+  $('t_fz').textContent=S.fused.z.toFixed(1)+' m';
+  $('t_acc').textContent=S.accuracy?('±'+S.accuracy.toFixed(0)+' m'):'— m';
+  $('t_fix').textContent=gpsFresh?'activo':(S.hasGPS?'antiguo':'esperando');
+  $('t_vel').textContent=S.vel.length().toFixed(2)+' m/s';
+  $('t_dist').textContent=S.dist.toFixed(1)+' m';
+
   resize(); renderer.render(scene,camera); requestAnimationFrame(loop);
 }
 function resize(){const w=canvas.clientWidth,h=canvas.clientHeight;
   if(canvas.width!==w*devicePixelRatio||canvas.height!==h*devicePixelRatio){
     renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}}
-resize(); place(); requestAnimationFrame(loop);
+resize(); requestAnimationFrame(loop);
 window.addEventListener('resize',resize);
 </script>
 </body>
