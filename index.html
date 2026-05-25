@@ -194,22 +194,38 @@ async function detect(){
 }
 
 /* ===== WEBXR ===== */
-let session=null, refSpace=null;
+let session=null, refSpace=null, usedSpace=null;
 async function start(){
   if(!(caps.https&&caps.xr)) return;
   try{
-    session=await navigator.xr.requestSession('immersive-ar',{optionalFeatures:['local-floor','local']});
+    // Petición mínima: 'local' es el espacio garantizado para immersive-ar.
+    // No pedimos local-floor como requerido para no provocar el rechazo de config.
+    session=await navigator.xr.requestSession('immersive-ar');
     renderer.xr.enabled=true;
     await renderer.xr.setSession(session);
-    // local-floor da origen a nivel de suelo; si no, local
-    try{ refSpace=await session.requestReferenceSpace('local-floor'); }
-    catch(e){ refSpace=await session.requestReferenceSpace('local'); }
+    // Cascada de espacios de referencia: del más útil al mínimo garantizado.
+    refSpace=null;
+    for(const type of ['local-floor','local','viewer']){
+      try{ refSpace=await session.requestReferenceSpace(type); usedSpace=type; break; }
+      catch(e){ /* probar el siguiente */ }
+    }
+    if(!refSpace) throw new Error('Ningún reference space disponible');
     S.tracking=true; S.origin=null; S.distance=0; clearTrail();
     setPill('tracking'); $('gate').classList.add('hidden'); $('btnRecenter').disabled=false;
-    $('howto').classList.add('show'); setTimeout(()=>$('howto').classList.remove('show'),5000);
+    $('howto').classList.add('show');
+    if(usedSpace==='viewer'){
+      $('howto').textContent='⚠ solo rotación disponible · sin tracking posicional en este equipo';
+      setTimeout(()=>$('howto').classList.remove('show'),7000);
+    }else{
+      setTimeout(()=>$('howto').classList.remove('show'),5000);
+    }
     session.addEventListener('end',onEnd);
     renderer.setAnimationLoop(frame);
-  }catch(e){ $('gateWarn').textContent='No se pudo iniciar: '+e.message; }
+  }catch(e){
+    const msg=(e&&e.message)?e.message:String(e);
+    $('gateWarn').innerHTML='No se pudo iniciar: '+msg+
+      '<br><span style="color:var(--dim)">Verifica: ARCore instalado y actualizado · Chrome actualizado · permiso de cámara concedido.</span>';
+  }
 }
 function onEnd(){
   S.tracking=false; renderer.xr.enabled=false; renderer.setAnimationLoop(null);
