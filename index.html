@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Calibración Relativa · Sensores reales</title>
+<title>AR Marker + IMU · Tracking híbrido</title>
 <style>
   :root{
     --bg:#0a0c10;--surface:#111520;--border:#1e2535;
@@ -12,380 +12,402 @@
     --mono:'Courier New',monospace;--ui:'Trebuchet MS',sans-serif;
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-  body{background:var(--bg);color:var(--text);font-family:var(--ui);min-height:100vh;
-    display:flex;flex-direction:column;align-items:center;padding:16px 8px 32px;overflow-x:hidden;}
-  header{width:100%;max-width:480px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:10px;}
-  header h1{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-family:var(--mono);}
-  header p{font-size:10px;color:var(--muted);margin-top:3px;font-family:var(--mono);}
+  html,body{height:100%;background:#000;color:var(--text);font-family:var(--ui);overflow:hidden;}
 
-  #phone-frame{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--border);
-    border-radius:20px;overflow:hidden;box-shadow:0 0 40px rgba(0,229,255,.04),0 0 0 1px #1a2030;display:flex;flex-direction:column;}
-  #status-bar{background:#0d1018;display:flex;justify-content:space-between;padding:6px 16px;
-    font-family:var(--mono);font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);}
+  /* Vídeo de la cámara y canvas de three.js — ambos a pantalla completa */
+  #ar-stage{position:fixed;inset:0;overflow:hidden;}
+  #ar-stage > video, #ar-stage > canvas{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:100%!important;height:100%!important;object-fit:cover;
+  }
 
-  #canvas-wrap{position:relative;width:100%;aspect-ratio:1/1;background:#0d1018;overflow:hidden;}
-  #mainCanvas{width:100%;height:100%;display:block;}
-  #overlay-hint{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(10,12,16,.9);
-    border:1px solid var(--border);border-radius:8px;padding:9px 15px;font-family:var(--mono);font-size:11px;
-    color:var(--accent);pointer-events:none;text-align:center;transition:opacity .4s;max-width:92%;}
+  /* HUD superior */
+  .top{position:fixed;top:0;left:0;right:0;padding:12px 14px;display:flex;justify-content:space-between;gap:10px;
+    pointer-events:none;z-index:10;}
+  .tag{font-family:var(--mono);font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent);
+    border:1px solid var(--border);padding:3px 8px;border-radius:2px;background:rgba(10,12,16,.65);backdrop-filter:blur(8px);}
+  .title h1{font-size:14px;font-weight:800;margin-top:6px;line-height:1;color:#fff;}
+  .title h1 em{font-style:normal;color:var(--accent);}
 
-  #hud{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);
-    border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
-  .hud-cell{background:var(--surface);padding:8px 10px;font-family:var(--mono);}
-  .hud-cell .label{font-size:8px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);}
-  .hud-cell .value{font-size:14px;font-weight:bold;color:var(--text);margin-top:2px;}
-  .hud-cell .value.accent{color:var(--accent);} .hud-cell .value.accent2{color:var(--accent2);} .hud-cell .value.accent3{color:var(--accent3);}
+  .pill{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:5px 10px;border-radius:14px;
+    background:rgba(10,12,16,.7);backdrop-filter:blur(8px);border:1px solid var(--border);
+    display:flex;align-items:center;gap:6px;white-space:nowrap;}
+  .pill .d{width:7px;height:7px;border-radius:50%;box-shadow:0 0 8px currentColor;}
+  .pill.ar{color:var(--accent3);} .pill.ar .d{background:var(--accent3);}
+  .pill.imu{color:var(--warn);} .pill.imu .d{background:var(--warn);}
+  .pill.idle{color:var(--muted);} .pill.idle .d{background:var(--muted);}
 
-  #controls{padding:12px;display:flex;flex-direction:column;gap:8px;background:var(--surface);}
-  #step-indicator{display:flex;gap:6px;align-items:center;font-family:var(--mono);font-size:10px;color:var(--muted);padding:0 2px;}
-  .step-dot{width:7px;height:7px;border-radius:50%;background:var(--border);transition:background .3s;}
-  .step-dot.active{background:var(--accent);box-shadow:0 0 6px var(--accent);} .step-dot.done{background:var(--accent3);}
+  /* Mini-mapa cenital del espacio */
+  #minimap{position:fixed;right:12px;top:60px;width:140px;height:140px;
+    background:rgba(10,12,16,.75);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:10px;z-index:10;
+    overflow:hidden;}
+  #minimap canvas{width:100%;height:100%;display:block;}
+  #minimap .ml{position:absolute;top:4px;left:6px;font-family:var(--mono);font-size:8px;color:var(--muted);letter-spacing:1.5px;}
 
-  .btn{width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:8px;font-family:var(--mono);
-    font-size:12px;letter-spacing:.06em;cursor:pointer;background:#0d1018;color:var(--text);text-align:left;
-    transition:all .15s;display:flex;align-items:center;gap:10px;}
-  .btn:active:not(:disabled){transform:scale(.98);}
-  .btn:disabled{opacity:.28;cursor:not-allowed;}
-  .btn-primary{border-color:var(--accent);color:var(--accent);background:rgba(0,229,255,.05);}
-  .btn-secondary{border-color:var(--accent2);color:var(--accent2);background:rgba(255,75,110,.04);}
-  .btn-reset{border-color:var(--muted);color:var(--muted);font-size:11px;}
-  .btn-icon{font-size:16px;flex-shrink:0;}
+  /* HUD inferior + controles */
+  .bottom{position:fixed;bottom:0;left:0;right:0;background:rgba(10,12,16,.85);backdrop-filter:blur(18px);
+    border-top:1px solid var(--border);border-radius:14px 14px 0 0;padding:10px 14px calc(10px + env(safe-area-inset-bottom));z-index:10;}
+  .telerow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:9px;}
+  .tcell{background:rgba(13,16,24,.7);border:1px solid var(--border);border-radius:7px;padding:6px 7px;font-family:var(--mono);}
+  .tcell .lbl{font-size:8px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;}
+  .tcell .val{font-size:13px;font-weight:700;color:var(--text);margin-top:1px;}
+  .tcell .val.ac{color:var(--accent);} .tcell .val.a2{color:var(--accent2);} .tcell .val.a3{color:var(--accent3);}
 
-  #step-bar-wrap{background:#0d1018;border:1px solid var(--border);border-radius:4px;height:6px;overflow:hidden;}
-  #step-bar{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));width:0%;transition:width .3s;border-radius:4px;}
+  .btnrow{display:flex;gap:8px;}
+  .btn{flex:1;padding:11px;border:none;border-radius:9px;font-family:var(--mono);font-weight:700;font-size:11px;
+    letter-spacing:.06em;cursor:pointer;transition:transform .08s,box-shadow .2s;text-transform:uppercase;}
+  .btn:active{transform:scale(.96);}
+  .btn-p{background:var(--accent);color:#001a1f;box-shadow:0 3px 14px rgba(0,229,255,.3);}
+  .btn-s{background:var(--accent2);color:#1a0008;box-shadow:0 3px 14px rgba(255,75,110,.3);}
+  .btn-g{background:transparent;color:var(--text);border:1px solid var(--border);}
+  .btn[disabled]{opacity:.35;pointer-events:none;}
 
-  #log-wrap{background:#0a0c10;border-top:1px solid var(--border);padding:8px 12px;max-height:96px;overflow-y:auto;}
-  #log-wrap::-webkit-scrollbar{width:4px;} #log-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
-  .log-line{font-family:var(--mono);font-size:10px;color:var(--muted);padding:1px 0;border-bottom:1px solid rgba(30,37,53,.4);display:flex;gap:8px;}
-  .log-line .ts{color:#2a3050;flex-shrink:0;} .log-line .msg{color:var(--text);}
-  .log-line.ok .msg{color:var(--accent3);} .log-line.warn .msg{color:var(--accent2);} .log-line.info .msg{color:var(--accent);}
+  /* Elastic bar */
+  .ebar{margin-top:8px;font-family:var(--mono);font-size:8.5px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+  .etrack{background:#0d1018;border:1px solid var(--border);border-radius:3px;height:5px;overflow:hidden;margin-top:3px;}
+  .efill{height:100%;width:0%;background:var(--accent3);transition:width .15s,background .3s;}
 
-  #elastic-bar-wrap{padding:8px 12px 12px;background:var(--surface);border-top:1px solid var(--border);
-    font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
-  #elastic-bar-track{background:#0d1018;border:1px solid var(--border);border-radius:4px;height:8px;overflow:hidden;margin-top:5px;}
-  #elastic-bar-fill{height:100%;width:0%;background:var(--accent3);transition:width .15s,background .3s;}
-  #elastic-label{margin-top:5px;display:block;}
+  /* Gate inicial */
+  .gate{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:28px;background:radial-gradient(circle at 50% 35%,#0e1521,#05070b);overflow-y:auto;}
+  .gate.hidden{display:none;}
+  .gate .tag{margin-bottom:14px;}
+  .gate h2{font-size:22px;font-weight:800;line-height:1.16;margin-bottom:10px;max-width:330px;letter-spacing:-.4px;color:#fff;}
+  .gate h2 em{font-style:normal;color:var(--accent);}
+  .gate p{color:var(--muted);font-size:12.5px;line-height:1.55;max-width:330px;margin-bottom:8px;}
+  .gate .steps{text-align:left;max-width:340px;margin:12px 0 18px;}
+  .gate .steps .s{display:flex;gap:10px;margin-bottom:9px;font-size:12px;line-height:1.5;color:var(--text);}
+  .gate .steps .n{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#001a1f;
+    font-family:var(--mono);font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;}
+  .gate .steps b{color:var(--accent);}
+  .gate .marker-tip{font-family:var(--mono);font-size:10.5px;color:var(--accent3);background:rgba(127,255,106,.08);
+    border:1px solid rgba(127,255,106,.3);border-radius:8px;padding:10px 12px;max-width:340px;margin-bottom:14px;text-align:left;line-height:1.5;}
+  .gate .btn{max-width:340px;width:100%;padding:13px;}
+  .warnmsg{color:var(--accent2);font-size:11px;font-family:var(--mono);margin-top:10px;max-width:340px;line-height:1.5;}
 
-  .stride{padding:0 12px 12px;background:var(--surface);}
-  .stride label{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.08em;}
-  .stride .sv{color:var(--accent);}
-  .stride input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:4px;background:#0d1018;}
-  .stride input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);box-shadow:0 0 8px var(--accent);cursor:pointer;}
-
-  .stepdot-vis{position:absolute;right:12px;bottom:12px;width:46px;height:46px;border-radius:50%;
-    background:rgba(255,75,110,.12);border:2px solid var(--accent2);display:flex;align-items:center;justify-content:center;
-    font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent2);transition:transform .1s,background .1s;}
-  .stepdot-vis.flash{transform:scale(1.25);background:rgba(255,75,110,.4);}
+  /* indicador de paso pulsante */
+  .stepdot{position:fixed;left:12px;top:60px;width:38px;height:38px;border-radius:50%;z-index:10;
+    background:rgba(245,197,66,.15);border:2px solid var(--warn);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:12px;font-weight:700;color:var(--warn);transition:transform .1s,background .1s;}
+  .stepdot.flash{transform:scale(1.3);background:rgba(245,197,66,.45);}
 </style>
 </head>
 <body>
-<header>
-  <h1>Calibración Relativa · Sensores Reales</h1>
-  <p>Origen céntrico → Radio R por pasos → Recorrido con elastic capping</p>
-</header>
 
-<div id="phone-frame">
-  <div id="status-bar"><span id="clock">--:--</span><span id="sensor-state">SENSORES: OFF</span></div>
+<!-- escenario AR: video + three.js canvas se inyectan aquí -->
+<div id="ar-stage"></div>
 
-  <div id="canvas-wrap">
-    <canvas id="mainCanvas"></canvas>
-    <div id="overlay-hint">→ Ponte en el CENTRO del espacio y fija el origen</div>
-    <div class="stepdot-vis" id="stepdot">0</div>
-  </div>
-
-  <div id="hud">
-    <div class="hud-cell"><div class="label">Posición (u)</div><div class="value accent" id="hud-pos">—</div></div>
-    <div class="hud-cell"><div class="label">Radio R (u)</div><div class="value accent2" id="hud-r">—</div></div>
-    <div class="hud-cell"><div class="label">Atenuación</div><div class="value accent3" id="hud-atten">—</div></div>
-  </div>
-
-  <div id="controls">
-    <div id="step-indicator">
-      <span class="step-dot" id="dot-0"></span><span class="step-dot" id="dot-1"></span><span class="step-dot" id="dot-2"></span>
-      <span id="step-label" style="margin-left:6px">Paso 1 de 3</span>
-    </div>
-    <button class="btn btn-primary" id="btn-origin"><span class="btn-icon">◎</span> Activar sensores y fijar ORIGEN (centro)</button>
-    <div id="step-bar-wrap"><div id="step-bar"></div></div>
-    <button class="btn btn-secondary" id="btn-step" disabled><span class="btn-icon">▸</span> Camina a la pared · pasos: <span id="steps-count">0</span></button>
-    <button class="btn btn-secondary" id="btn-setR" disabled><span class="btn-icon">⊙</span> Fijar RADIO aquí (llegaste a la pared)</button>
-    <button class="btn btn-primary" id="btn-move" disabled><span class="btn-icon">⟲</span> Recentrar y RECORRER el espacio</button>
-    <button class="btn btn-reset" id="btn-reset"><span class="btn-icon">↺</span> Reiniciar calibración</button>
-  </div>
-
-  <div class="stride">
-    <label>Longitud de zancada <span class="sv" id="stride-val">0.70 m</span></label>
-    <input type="range" id="stride-range" min="0.45" max="0.95" value="0.70" step="0.01">
-  </div>
-
-  <div id="elastic-bar-wrap">
-    Proximidad al borde
-    <div id="elastic-bar-track"><div id="elastic-bar-fill"></div></div>
-    <span id="elastic-label">— en espera de calibración</span>
-  </div>
-
-  <div id="log-wrap"></div>
+<!-- HUD -->
+<div class="top">
+  <div class="title"><span class="tag">AR.js + IMU</span><h1>Marcador como <em>ancla</em></h1></div>
+  <div id="pill" class="pill idle"><span class="d"></span><span id="pillTxt">EN ESPERA</span></div>
 </div>
+
+<div id="minimap"><span class="ml">MINIMAPA</span><canvas id="mmCanvas"></canvas></div>
+
+<div class="stepdot" id="stepdot">0</div>
+
+<!-- HUD inferior -->
+<div class="bottom">
+  <div class="telerow">
+    <div class="tcell"><div class="lbl">pos X</div><div class="val ac" id="t_x">0.00 m</div></div>
+    <div class="tcell"><div class="lbl">pos Z</div><div class="val ac" id="t_z">0.00 m</div></div>
+    <div class="tcell"><div class="lbl">pasos</div><div class="val a2" id="t_steps">0</div></div>
+    <div class="tcell"><div class="lbl">atenuación</div><div class="val a3" id="t_atten">0%</div></div>
+  </div>
+  <div class="btnrow">
+    <button class="btn btn-g" id="btn-cal" disabled>Calibrar R (caminar)</button>
+    <button class="btn btn-s" id="btn-setR" disabled>Fijar R aquí</button>
+    <button class="btn btn-p" id="btn-recenter" disabled>Recentrar</button>
+  </div>
+  <div class="ebar"><span id="elabel">Espera al primer fix del marcador…</span>
+    <div class="etrack"><div class="efill" id="efill"></div></div>
+  </div>
+</div>
+
+<!-- Gate inicial -->
+<div class="gate" id="gate">
+  <span class="tag">Tracking visual + inercial</span>
+  <h2>Marcador AR<br>como <em>ancla</em> del cuarto</h2>
+  <p>El marcador físico en el centro corrige la deriva del IMU cada vez que la cámara lo ve. Es como tener un ARCore casero.</p>
+  <div class="marker-tip">
+    📄 <b>Necesitas el marcador impreso.</b> Abre <code>marker_hiro.html</code> en cualquier pantalla, o imprime la imagen Hiro estándar y colócala plana en el centro del cuarto.
+  </div>
+  <div class="steps">
+    <div class="s"><span class="n">1</span><span>Coloca el <b>marcador Hiro</b> en el centro del cuarto, plano y bien iluminado.</span></div>
+    <div class="s"><span class="n">2</span><span>Apunta la cámara al marcador hasta ver el <b>cubo verde</b> sobre él (ancla detectada).</span></div>
+    <div class="s"><span class="n">3</span><span>Pulsa <b>Calibrar R</b> y camina hacia una pared contando pasos; pulsa <b>Fijar R</b> al llegar.</span></div>
+    <div class="s"><span class="n">4</span><span>Recorre el cuarto: si pierdes el marcador, los pasos cubren el hueco hasta volver a verlo.</span></div>
+  </div>
+  <button class="btn btn-p" id="btn-start">Iniciar cámara</button>
+  <div class="warnmsg" id="gateWarn"></div>
+</div>
+
+<!-- AR.js y three.js -->
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
 <script>
 /* ══════════════ ESTADO ══════════════ */
-const Estado={
-  fase:0,                  // 0 idle · 1 midiendo R · 2 R fijado · 3 recorriendo
-  origen:null,             // {x,y} en px (centro del canvas)
-  posUsuario:null,         // {x,y} en px — posición durante calibración
-  camPos:{x:0,y:0},        // posición relativa durante el recorrido (px)
-  R:0,                     // radio operativo (px)
-  pasos:0,
-  pasosLen:34,             // px por paso en el canvas (escala visual)
-  strideM:0.70,            // metros reales por paso
-  modoLibre:false,
-  heading:0,               // rumbo brújula (rad)
-  _huellasPos:[]
+const Estado = {
+  arReady:false,         // AR.js arrancado
+  markerVisible:false,   // ¿el marcador está en cámara ahora?
+  // posición de la cámara respecto al marcador (m) — viene de AR.js cuando markerVisible
+  arPos:{x:0,y:0,z:0},
+  // posición fusionada (lo que mostramos / usamos para elastic capping)
+  pos:{x:0,z:0},
+  // posición estimada solo por pasos (para cubrir cuando se pierde marcador)
+  imuPos:{x:0,z:0},
+  // calibración del cuarto
+  R:0, calibrating:false, refPosForR:null,
+  // pasos
+  pasos:0, heading:0, strideM:0.70,
+  // misc
+  lastFixTime:0
 };
 
-/* ══════════════ CANVAS ══════════════ */
-const canvas=document.getElementById('mainCanvas');
-const ctx=canvas.getContext('2d');
-const wrap=document.getElementById('canvas-wrap');
-function redimensionarCanvas(){
-  const rect=wrap.getBoundingClientRect();
-  const dpr=window.devicePixelRatio||1;
-  canvas.width=rect.width*dpr; canvas.height=rect.height*dpr;
-  ctx.setTransform(1,0,0,1,0,0); ctx.scale(dpr,dpr);
-  canvas._csW=rect.width; canvas._csH=rect.height;
-}
-
-/* ══════════════ LOG ══════════════ */
-const logWrap=document.getElementById('log-wrap');
-function log(msg,tipo=''){
-  const a=new Date();
-  const ts=`${String(a.getSeconds()).padStart(2,'0')}.${String(a.getMilliseconds()).padStart(3,'0')}`;
-  const l=document.createElement('div'); l.className=`log-line ${tipo}`;
-  l.innerHTML=`<span class="ts">${ts}</span><span class="msg">${msg}</span>`;
-  logWrap.appendChild(l); logWrap.scrollTop=logWrap.scrollHeight;
-}
-
-/* ══════════════ ELASTIC CAPPING (tu algoritmo, intacto) ══════════════ */
-function elasticCapping(posReal,origen,R){
-  if(!R||R<=0) return {...posReal,ratio:0,atenuacion:0};
-  const dx=posReal.x-origen.x, dy=posReal.y-origen.y;
-  const dist=Math.sqrt(dx*dx+dy*dy);
-  const ratio=Math.min(dist/R,2.0);
-  if(dist<=0) return {x:origen.x,y:origen.y,ratio:0,atenuacion:0};
+/* ══════════════ ELASTIC CAPPING (tu lógica) ══════════════ */
+function elasticCapping(pos, R){
+  if(!R||R<=0) return {x:pos.x,z:pos.z,ratio:0,atenuacion:0};
+  const dist = Math.hypot(pos.x,pos.z);
+  const ratio = Math.min(dist/R,2.0);
+  if(dist<=0) return {x:0,z:0,ratio:0,atenuacion:0};
   const zonaLibre=0.70;
-  if(ratio<=zonaLibre) return {x:posReal.x,y:posReal.y,ratio,atenuacion:0};
+  if(ratio<=zonaLibre) return {x:pos.x,z:pos.z,ratio,atenuacion:0};
   const exceso=(ratio-zonaLibre)/(1.0-zonaLibre);
   const factorLog=Math.log(1+exceso*1.5)/Math.log(2.5);
-  const distEfectiva=R*zonaLibre+(R-R*zonaLibre)*(1-factorLog*0.65);
-  const norm=dist;
-  const x=origen.x+(dx/norm)*distEfectiva;
-  const y=origen.y+(dy/norm)*distEfectiva;
-  return {x,y,ratio:Math.min(ratio,1),atenuacion:Math.min(factorLog*100,100)};
+  const distEf=R*zonaLibre+(R-R*zonaLibre)*(1-factorLog*0.65);
+  return {x:(pos.x/dist)*distEf, z:(pos.z/dist)*distEf, ratio:Math.min(ratio,1), atenuacion:Math.min(factorLog*100,100)};
 }
 
-/* ══════════════ DETECCIÓN DE PASOS (acelerómetro real) ══════════════ */
+/* ══════════════ DETECCIÓN DE PASOS ══════════════ */
 const STEP={thresh:1.1,minInterval:280,lastStepMs:0,ema:0,emaA:0.85,armed:true};
 function detectStep(mag,now){
   STEP.ema=STEP.emaA*STEP.ema+(1-STEP.emaA)*mag;
   const dyn=mag-STEP.ema;
-  if(STEP.armed&&dyn>STEP.thresh&&(now-STEP.lastStepMs)>STEP.minInterval){
-    STEP.armed=false; STEP.lastStepMs=now; return true;
-  }
+  if(STEP.armed&&dyn>STEP.thresh&&(now-STEP.lastStepMs)>STEP.minInterval){STEP.armed=false;STEP.lastStepMs=now;return true;}
   if(dyn<STEP.thresh*0.3) STEP.armed=true;
   return false;
 }
-
-/* ══════════════ SENSORES ══════════════ */
 function onOrient(e){ if(e.alpha!==null) Estado.heading=e.alpha*Math.PI/180; }
 function onMotion(e){
-  if(Estado.fase===0) return;
+  if(!Estado.arReady) return;
   const a=e.accelerationIncludingGravity||e.acceleration;
   if(!a||a.x===null) return;
-  const mag=Math.hypot(a.x,a.y,a.z);
-  if(detectStep(mag,performance.now())) onStep();
+  if(detectStep(Math.hypot(a.x,a.y,a.z), performance.now())) onStep();
 }
 function onStep(){
-  // dirección del paso desde la brújula: alpha=0 norte (=arriba, -Y en canvas)
-  const dx=Math.sin(Estado.heading), dy=-Math.cos(Estado.heading);
+  Estado.pasos++;
+  const dx=Math.sin(Estado.heading)*Estado.strideM;
+  const dz=-Math.cos(Estado.heading)*Estado.strideM;
+  // El IMU SOLO se usa cuando el marcador no está visible (relleno)
+  Estado.imuPos.x += dx;
+  Estado.imuPos.z += dz;
+  // feedback
   const sd=document.getElementById('stepdot');
-
-  if(Estado.fase===1){
-    // FASE CALIBRACIÓN: alejarse del origen contando pasos
-    Estado.pasos++;
-    Estado.posUsuario.x+=dx*Estado.pasosLen;
-    Estado.posUsuario.y+=dy*Estado.pasosLen;
-    Estado._huellasPos.push({...Estado.posUsuario});
-    document.getElementById('steps-count').textContent=Estado.pasos;
-    document.getElementById('step-bar').style.width=Math.min(Estado.pasos*12,100)+'%';
-    document.getElementById('btn-setR').disabled = Estado.pasos<1;
-    log(`Paso ${Estado.pasos} · dist ${(dist2origen()/Estado.pasosLen).toFixed(1)} u`);
-  }
-  else if(Estado.fase===3){
-    // FASE RECORRIDO: mover cámara con elastic capping
-    const real={x:Estado.origen.x+Estado.camPos.x+dx*Estado.pasosLen,
-                y:Estado.origen.y+Estado.camPos.y+dy*Estado.pasosLen};
-    const r=elasticCapping(real,Estado.origen,Estado.R);
-    Estado.camPos.x=r.x-Estado.origen.x;
-    Estado.camPos.y=r.y-Estado.origen.y;
-    if(r.atenuacion>5) log(`Elastic capping: ${r.atenuacion.toFixed(0)}% de frenado`,'warn');
-  }
-  sd.textContent=(Estado.fase===1?Estado.pasos:'•');
+  sd.textContent=Estado.pasos;
   sd.classList.add('flash'); setTimeout(()=>sd.classList.remove('flash'),120);
-  dibujar(); actualizarHUD();
 }
-function dist2origen(){ const dx=Estado.posUsuario.x-Estado.origen.x,dy=Estado.posUsuario.y-Estado.origen.y; return Math.hypot(dx,dy); }
 
-/* ══════════════ FASES ══════════════ */
-async function fijarOrigen(){
-  // pedir permisos (iOS) e instalar listeners
+/* ══════════════ SCENE AR.js + Three.js ══════════════ */
+let scene, camera, renderer, arToolkitSource, arToolkitContext, markerRoot, anchorCube;
+
+function setupAR(){
+  scene = new THREE.Scene();
+  camera = new THREE.Camera(); scene.add(camera);
+
+  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setClearColor(new THREE.Color('black'),0);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.domElement.style.position='absolute';
+  renderer.domElement.style.top='0'; renderer.domElement.style.left='0';
+  document.getElementById('ar-stage').appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff,0.9));
+  const dl=new THREE.DirectionalLight(0xffffff,0.7); dl.position.set(2,4,2); scene.add(dl);
+
+  // Fuente de video (cámara trasera)
+  arToolkitSource = new THREEx.ArToolkitSource({sourceType:'webcam', sourceWidth:1280, sourceHeight:960});
+  arToolkitSource.init(()=>{ setTimeout(onResize,200); }, ()=>{ document.getElementById('gateWarn').textContent='No se pudo acceder a la cámara.'; });
+
+  // Contexto AR
+  arToolkitContext = new THREEx.ArToolkitContext({
+    cameraParametersUrl: 'https://raw.githack.com/AR-js-org/AR.js/master/data/data/camera_para.dat',
+    detectionMode:'mono', maxDetectionRate:30, canvasWidth:640, canvasHeight:480
+  });
+  arToolkitContext.init(()=>{ camera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix()); });
+
+  // Marker root: lo que se "ancla" al Hiro físico
+  markerRoot = new THREE.Group(); scene.add(markerRoot);
+  new THREEx.ArMarkerControls(arToolkitContext, markerRoot, {
+    type:'pattern',
+    patternUrl:'https://raw.githack.com/AR-js-org/AR.js/master/data/data/patt.hiro'
+  });
+
+  // Cubo verde sobre el marcador (feedback visual de "ancla detectada")
+  anchorCube = new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshStandardMaterial({color:0x7fff6a, emissive:0x7fff6a, emissiveIntensity:.3, metalness:.3, roughness:.4, transparent:true, opacity:.85})
+  );
+  anchorCube.position.y=0.5;
+  markerRoot.add(anchorCube);
+  // ejes para que sepas la orientación del marcador
+  markerRoot.add(new THREE.AxesHelper(1));
+
+  window.addEventListener('resize',onResize);
+}
+function onResize(){
+  arToolkitSource.onResizeElement();
+  arToolkitSource.copyElementSizeTo(renderer.domElement);
+  if(arToolkitContext.arController) arToolkitSource.copyElementSizeTo(arToolkitContext.arController.canvas);
+}
+
+/* ══════════════ LOOP ══════════════ */
+const tmpV = new THREE.Vector3();
+function loop(){
+  if(arToolkitSource && arToolkitSource.ready) arToolkitContext.update(arToolkitSource.domElement);
+
+  const wasVisible = Estado.markerVisible;
+  Estado.markerVisible = markerRoot && markerRoot.visible;
+
+  if(Estado.markerVisible){
+    // Posición de la CÁMARA respecto al marcador.
+    // markerRoot tiene la pose del marcador en el frame de cámara; queremos lo inverso:
+    // posición del observador (teléfono) respecto al marcador en su frame.
+    // Truco: invertir la matriz mundial del marker_root.
+    markerRoot.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(markerRoot.matrixWorld).invert();
+    // la posición de la cámara en mundo es (0,0,0); transformada al frame del marcador:
+    tmpV.set(0,0,0).applyMatrix4(inv);
+    Estado.arPos.x = tmpV.x; Estado.arPos.y = tmpV.y; Estado.arPos.z = tmpV.z;
+    Estado.lastFixTime = performance.now();
+
+    // Fusión: cuando hay fix, la posición ES la del marcador. Reseteamos el IMU para futuras pérdidas.
+    Estado.pos.x = Estado.arPos.x;
+    Estado.pos.z = Estado.arPos.z;
+    Estado.imuPos.x = Estado.arPos.x;
+    Estado.imuPos.z = Estado.arPos.z;
+
+    if(!wasVisible){
+      document.getElementById('elabel').textContent='Marcador detectado · tracking absoluto';
+    }
+  }else{
+    // Sin marcador: usa la última posición + el IMU acumulado
+    Estado.pos.x = Estado.imuPos.x;
+    Estado.pos.z = Estado.imuPos.z;
+  }
+
+  // Estado / pill
+  const pill=document.getElementById('pill'), pt=document.getElementById('pillTxt');
+  if(!Estado.arReady){pill.className='pill idle';pt.textContent='EN ESPERA';}
+  else if(Estado.markerVisible){pill.className='pill ar';pt.textContent='ANCLA VISUAL';}
+  else{pill.className='pill imu';pt.textContent='SOLO IMU';}
+
+  // Aplicar elastic capping si hay R
+  let aten=0, ratio=0;
+  if(Estado.R>0){
+    const r=elasticCapping(Estado.pos, Estado.R);
+    // sobrescribir si está fuera de la zona libre (el capping retiene visualmente)
+    Estado.pos.x=r.x; Estado.pos.z=r.z;
+    aten=r.atenuacion; ratio=r.ratio;
+  }
+
+  // Render AR
+  renderer.render(scene,camera);
+
+  // UI
+  document.getElementById('t_x').textContent=Estado.pos.x.toFixed(2)+' m';
+  document.getElementById('t_z').textContent=Estado.pos.z.toFixed(2)+' m';
+  document.getElementById('t_steps').textContent=Estado.pasos;
+  document.getElementById('t_atten').textContent=aten.toFixed(0)+'%';
+  // barra elástica
+  const efill=document.getElementById('efill'), elabel=document.getElementById('elabel');
+  const pct=Math.min(ratio*100,100); efill.style.width=pct+'%';
+  if(Estado.R>0){
+    if(ratio<.7){efill.style.background='var(--accent3)';elabel.textContent=`Zona libre · ${pct.toFixed(0)}%`;}
+    else if(ratio<.9){efill.style.background='var(--warn)';elabel.textContent=`Atenuación suave: ${aten.toFixed(0)}%`;}
+    else{efill.style.background='var(--accent2)';elabel.textContent=`ELASTIC CAPPING: ${aten.toFixed(0)}%`;}
+  }
+
+  // Mini-mapa
+  drawMinimap(ratio);
+
+  requestAnimationFrame(loop);
+}
+
+/* ══════════════ MINI-MAPA ══════════════ */
+const mm=document.getElementById('mmCanvas'); const mctx=mm.getContext('2d');
+function fitMM(){ const r=mm.parentElement.getBoundingClientRect(); const dpr=devicePixelRatio||1; mm.width=r.width*dpr; mm.height=r.height*dpr; mctx.setTransform(1,0,0,1,0,0); mctx.scale(dpr,dpr); mm._w=r.width; mm._h=r.height; }
+fitMM(); window.addEventListener('resize',fitMM);
+function drawMinimap(ratio){
+  if(!mm._w) return;
+  const W=mm._w, H=mm._h, cx=W/2, cy=H/2;
+  mctx.clearRect(0,0,W,H);
+  mctx.fillStyle='rgba(13,16,24,0)'; mctx.fillRect(0,0,W,H);
+  // escala: el R operativo ocupa 0.42 del minimapa
+  const scale = Estado.R>0 ? (W*0.42/Estado.R) : 30;
+  // grilla
+  mctx.strokeStyle='rgba(30,37,53,.6)'; mctx.lineWidth=.5;
+  for(let i=-3;i<=3;i++){ mctx.beginPath();mctx.moveTo(cx+i*scale,0);mctx.lineTo(cx+i*scale,H);mctx.stroke();
+                          mctx.beginPath();mctx.moveTo(0,cy+i*scale);mctx.lineTo(W,cy+i*scale);mctx.stroke();}
+  // círculos R
+  if(Estado.R>0){
+    mctx.beginPath();mctx.arc(cx,cy,Estado.R*scale,0,Math.PI*2);mctx.strokeStyle='rgba(255,75,110,.7)';mctx.lineWidth=1.5;mctx.stroke();
+    mctx.beginPath();mctx.arc(cx,cy,Estado.R*scale*.7,0,Math.PI*2);mctx.strokeStyle='rgba(0,229,255,.4)';mctx.setLineDash([3,3]);mctx.lineWidth=1;mctx.stroke();mctx.setLineDash([]);
+  }
+  // origen (marcador)
+  mctx.beginPath();mctx.arc(cx,cy,4,0,Math.PI*2);mctx.fillStyle='#00e5ff';mctx.fill();
+  // tú
+  const px=cx+Estado.pos.x*scale, py=cy+Estado.pos.z*scale;
+  mctx.beginPath();mctx.arc(px,py,6,0,Math.PI*2);
+  mctx.fillStyle=Estado.markerVisible?'rgba(127,255,106,.4)':'rgba(245,197,66,.4)';mctx.fill();
+  mctx.strokeStyle=Estado.markerVisible?'#7fff6a':'#f5c542';mctx.lineWidth=2;mctx.stroke();
+}
+
+/* ══════════════ CONTROLES ══════════════ */
+async function startApp(){
+  // permisos IMU (iOS) - en Android suelen no requerirse
   for(const Ev of [window.DeviceMotionEvent,window.DeviceOrientationEvent]){
     if(Ev&&typeof Ev.requestPermission==='function'){ try{ await Ev.requestPermission(); }catch(e){} }
   }
-  if(window.DeviceMotionEvent) window.addEventListener('devicemotion',onMotion,true);
-  if(window.DeviceOrientationEvent) window.addEventListener('deviceorientation',onOrient,true);
-  document.getElementById('sensor-state').textContent='SENSORES: ON';
+  window.addEventListener('devicemotion',onMotion,true);
+  window.addEventListener('deviceorientation',onOrient,true);
 
-  const W=canvas._csW,H=canvas._csH;
-  Estado.origen={x:W/2,y:H/2};
-  Estado.posUsuario={...Estado.origen};
-  Estado.fase=1; Estado.pasos=0; Estado._huellasPos=[];
-  document.getElementById('btn-origin').disabled=true;
-  document.getElementById('btn-step').disabled=false;
-  document.getElementById('overlay-hint').textContent='→ Camina hacia una pared. Tus pasos se cuentan solos.';
-  actualizarDots(1);
-  log('Origen fijado en el centro (0,0)','info');
-  log('Camina en línea recta hacia la pared más lejana','info');
-  dibujar(); actualizarHUD();
+  setupAR();
+  Estado.arReady=true;
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('btn-cal').disabled=false;
+  document.getElementById('btn-recenter').disabled=false;
+  requestAnimationFrame(loop);
 }
+document.getElementById('btn-start').addEventListener('click',startApp);
 
-function fijarRadio(){
-  if(Estado.fase!==1||Estado.pasos<1) return;
-  Estado.R=dist2origen();
-  Estado.fase=2;
-  document.getElementById('btn-step').disabled=true;
-  document.getElementById('btn-setR').disabled=true;
-  document.getElementById('btn-move').disabled=false;
-  document.getElementById('overlay-hint').textContent='→ Radio fijado. Pulsa "Recentrar y recorrer".';
-  actualizarDots(2);
-  const metros=(Estado.R/Estado.pasosLen*Estado.strideM).toFixed(1);
-  log(`Radio R = ${(Estado.R/Estado.pasosLen).toFixed(1)} u ≈ ${metros} m (${Estado.pasos} pasos)`,'ok');
-  log('Zona libre: 70% interior. Borde 70–100%: elastic capping','info');
-  dibujar(); actualizarHUD();
-}
-
-function activarRecorrido(){
-  Estado.modoLibre=true; Estado.fase=3;
-  Estado.camPos={x:0,y:0};                  // RECENTRAR: vuelves al centro
-  document.getElementById('btn-move').disabled=true;
-  document.getElementById('overlay-hint').textContent='→ Camina: te mueves desde el centro, frenado en los bordes.';
-  setTimeout(()=>{document.getElementById('overlay-hint').style.opacity='0';},3500);
-  actualizarDots(3);
-  log('Recentrado al origen · Recorrido libre activado','ok');
-  log('Acércate al borde para ver el elastic capping','info');
-  dibujar(); actualizarHUD();
-}
-
-function resetear(){
-  Estado.fase=0; Estado.origen=null; Estado.posUsuario=null; Estado.R=0;
-  Estado.pasos=0; Estado.modoLibre=false; Estado.camPos={x:0,y:0}; Estado._huellasPos=[];
-  STEP.ema=0; STEP.armed=true;
-  document.getElementById('btn-origin').disabled=false;
-  document.getElementById('btn-step').disabled=true;
-  document.getElementById('btn-setR').disabled=true;
-  document.getElementById('btn-move').disabled=true;
-  document.getElementById('step-bar').style.width='0%';
-  document.getElementById('steps-count').textContent='0';
-  const oh=document.getElementById('overlay-hint'); oh.style.opacity='1'; oh.style.display='';
-  oh.textContent='→ Ponte en el CENTRO del espacio y fija el origen';
-  actualizarDots(0); actualizarHUD(); dibujar();
-  log('Sistema reiniciado · Listo para nueva calibración','info');
-}
-
-/* ══════════════ RENDER ══════════════ */
-function dibujar(){
-  const W=canvas._csW||300,H=canvas._csH||300;
-  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0d1018'; ctx.fillRect(0,0,W,H);
-  // grilla
-  ctx.strokeStyle='rgba(30,37,53,.8)'; ctx.lineWidth=.5;
-  for(let x=0;x<=W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
-  for(let y=0;y<=H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
-  if(!Estado.origen) return;
-  const ox=Estado.origen.x,oy=Estado.origen.y;
-
-  // Radio R y zonas
-  if(Estado.R>0){
-    const g=ctx.createRadialGradient(ox,oy,Estado.R*.7,ox,oy,Estado.R);
-    g.addColorStop(0,'rgba(255,75,110,0)'); g.addColorStop(1,'rgba(255,75,110,.18)');
-    ctx.beginPath();ctx.arc(ox,oy,Estado.R,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
-    ctx.beginPath();ctx.arc(ox,oy,Estado.R*.7,0,Math.PI*2);ctx.fillStyle='rgba(0,229,255,.04)';ctx.fill();
-    ctx.beginPath();ctx.arc(ox,oy,Estado.R,0,Math.PI*2);ctx.strokeStyle='rgba(255,75,110,.7)';ctx.lineWidth=1.5;ctx.stroke();
-    ctx.beginPath();ctx.arc(ox,oy,Estado.R*.7,0,Math.PI*2);ctx.strokeStyle='rgba(0,229,255,.4)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.stroke();ctx.setLineDash([]);
-  }
-  // huellas de calibración
-  Estado._huellasPos.forEach((h,i)=>{ctx.beginPath();ctx.arc(h.x,h.y,3,0,Math.PI*2);ctx.fillStyle=`rgba(255,75,110,${.3+i*.06})`;ctx.fill();});
-
-  // origen
-  ctx.strokeStyle='rgba(0,229,255,.5)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(ox-14,oy);ctx.lineTo(ox+14,oy);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(ox,oy-14);ctx.lineTo(ox,oy+14);ctx.stroke();
-  ctx.beginPath();ctx.arc(ox,oy,5,0,Math.PI*2);ctx.fillStyle='#00e5ff';ctx.fill();
-  ctx.fillStyle='#00e5ff';ctx.font='bold 10px Courier New';ctx.fillText('(0,0)',ox+8,oy-8);
-
-  // posición usuario durante calibración
-  if(Estado.fase===1&&Estado.posUsuario){
-    const px=Estado.posUsuario.x,py=Estado.posUsuario.y;
-    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(px,py);ctx.strokeStyle='rgba(255,75,110,.5)';ctx.lineWidth=1.5;ctx.stroke();
-    ctx.beginPath();ctx.arc(px,py,7,0,Math.PI*2);ctx.fillStyle='rgba(255,75,110,.25)';ctx.fill();ctx.strokeStyle='#ff4b6e';ctx.lineWidth=2;ctx.stroke();
-  }
-  // cámara durante recorrido
-  if(Estado.fase===3){
-    const cx=ox+Estado.camPos.x,cy=oy+Estado.camPos.y;
-    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(cx,cy);ctx.strokeStyle='rgba(127,255,106,.5)';ctx.lineWidth=1.5;ctx.stroke();
-    ctx.beginPath();ctx.arc(cx,cy,7,0,Math.PI*2);ctx.fillStyle='rgba(127,255,106,.2)';ctx.fill();ctx.strokeStyle='#7fff6a';ctx.lineWidth=2;ctx.stroke();
-    ctx.fillStyle='#7fff6a';ctx.font='bold 10px Courier New';ctx.fillText('TÚ',cx+10,cy+4);
-  }
-}
-
-/* ══════════════ HUD + BARRA ELÁSTICA ══════════════ */
-function actualizarHUD(){
-  const hp=document.getElementById('hud-pos'),hr=document.getElementById('hud-r'),ha=document.getElementById('hud-atten');
-  if(!Estado.origen){hp.textContent='—';hr.textContent='—';ha.textContent='—';return;}
-  let rx=0,ry=0;
-  if(Estado.fase===3){rx=Estado.camPos.x;ry=Estado.camPos.y;}
-  else if(Estado.posUsuario){rx=Estado.posUsuario.x-Estado.origen.x;ry=Estado.posUsuario.y-Estado.origen.y;}
-  hp.textContent=`${(rx/Estado.pasosLen).toFixed(1)}, ${(ry/Estado.pasosLen).toFixed(1)}`;
-  hr.textContent=Estado.R>0?`${(Estado.R/Estado.pasosLen).toFixed(1)} u`:'—';
-  if(Estado.fase===3&&Estado.R>0){
-    const real={x:Estado.origen.x+Estado.camPos.x,y:Estado.origen.y+Estado.camPos.y};
-    const r=elasticCapping(real,Estado.origen,Estado.R);
-    ha.textContent=`${r.atenuacion.toFixed(0)}%`; actualizarElasticBar(r.ratio,r.atenuacion);
-  }else{ha.textContent='0%';actualizarElasticBar(0,0);}
-}
-function actualizarElasticBar(ratio,aten){
-  const fill=document.getElementById('elastic-bar-fill'),label=document.getElementById('elastic-label');
-  const pct=Math.min(ratio*100,100); fill.style.width=pct+'%';
-  if(ratio<0.70){fill.style.background='var(--accent3)';label.textContent=`${pct.toFixed(0)}% — zona libre, sin atenuación`;label.style.color='#7fff6a';}
-  else if(ratio<0.90){fill.style.background='#f5c542';label.textContent=`${pct.toFixed(0)}% — atenuación suave: ${aten.toFixed(0)}%`;label.style.color='#f5c542';}
-  else{fill.style.background='var(--accent2)';label.textContent=`${pct.toFixed(0)}% — ELASTIC CAPPING: ${aten.toFixed(0)}%`;label.style.color='var(--accent2)';}
-}
-function actualizarDots(p){
-  const labels=['Paso 1 de 3','Paso 2 de 3','Paso 3 de 3','Calibración completa'];
-  document.getElementById('step-label').textContent=labels[p]||'';
-  for(let i=0;i<3;i++){const d=document.getElementById('dot-'+i);d.className='step-dot';if(i<p)d.classList.add('done');else if(i===p)d.classList.add('active');}
-}
-function actualizarReloj(){const a=new Date();document.getElementById('clock').textContent=`${String(a.getHours()).padStart(2,'0')}:${String(a.getMinutes()).padStart(2,'0')}`;}
-
-/* ══════════════ INIT ══════════════ */
-document.getElementById('btn-origin').addEventListener('click',fijarOrigen);
-document.getElementById('btn-setR').addEventListener('click',fijarRadio);
-document.getElementById('btn-move').addEventListener('click',activarRecorrido);
-document.getElementById('btn-reset').addEventListener('click',resetear);
-document.getElementById('stride-range').addEventListener('input',e=>{
-  Estado.strideM=+e.target.value; document.getElementById('stride-val').textContent=Estado.strideM.toFixed(2)+' m';
-  actualizarHUD();
+document.getElementById('btn-cal').addEventListener('click',()=>{
+  if(!Estado.markerVisible){document.getElementById('elabel').textContent='⚠ Apunta primero al marcador';return;}
+  Estado.calibrating=true; Estado.pasos=0; Estado.refPosForR={...Estado.pos};
+  document.getElementById('btn-cal').disabled=true;
+  document.getElementById('btn-setR').disabled=false;
+  document.getElementById('elabel').textContent='Camina hacia una pared y pulsa "Fijar R" al llegar';
 });
-window.addEventListener('resize',()=>{redimensionarCanvas();dibujar();});
-redimensionarCanvas(); dibujar(); actualizarHUD(); actualizarReloj(); setInterval(actualizarReloj,30000);
-log('Sistema de calibración iniciado · sensores reales','info');
+
+document.getElementById('btn-setR').addEventListener('click',()=>{
+  if(!Estado.refPosForR) return;
+  const dx=Estado.pos.x-Estado.refPosForR.x, dz=Estado.pos.z-Estado.refPosForR.z;
+  Estado.R = Math.hypot(dx,dz);
+  if(Estado.R<0.3) Estado.R=0.3; // mínimo razonable
+  Estado.calibrating=false;
+  document.getElementById('btn-setR').disabled=true;
+  document.getElementById('btn-cal').disabled=false;
+  document.getElementById('elabel').textContent=`R fijado: ${Estado.R.toFixed(2)} m · recorre libremente`;
+});
+
+document.getElementById('btn-recenter').addEventListener('click',()=>{
+  // si el marcador está visible, recentra al marcador (ancla real)
+  // si no, recentra el IMU al último fix conocido
+  Estado.imuPos.x=0; Estado.imuPos.z=0;
+  Estado.pos.x=0; Estado.pos.z=0;
+  Estado.pasos=0;
+});
 </script>
 </body>
 </html>
