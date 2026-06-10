@@ -1,436 +1,459 @@
-  <!DOCTYPE html>
-  <html lang="es">
-  <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AR Marker + IMU · Tracking híbrido</title>
-  <style>
-    :root{
-      --bg:#0a0c10;--surface:#111520;--border:#1e2535;
-      --accent:#00e5ff;--accent2:#ff4b6e;--accent3:#7fff6a;
-      --text:#cdd6f4;--muted:#4a5270;--warn:#f5c542;
-      --mono:'Courier New',monospace;--ui:'Trebuchet MS',sans-serif;
-    }
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-    html,body{height:100%;background:#000;color:var(--text);font-family:var(--ui);overflow:hidden;}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AR Marker + IMU · Tracking híbrido</title>
+<style>
+  :root{
+    --bg:#0a0c10;--surface:#111520;--border:#1e2535;
+    --accent:#00e5ff;--accent2:#ff4b6e;--accent3:#7fff6a;
+    --text:#cdd6f4;--muted:#4a5270;--warn:#f5c542;
+    --mono:'Courier New',monospace;--ui:'Trebuchet MS',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;background:#000;color:var(--text);font-family:var(--ui);overflow:hidden;}
 
-    /* Vídeo de la cámara y canvas de three.js — ambos a pantalla completa */
-    #ar-stage{position:fixed;inset:0;overflow:hidden;}
-    #ar-stage > video, #ar-stage > canvas{
-      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-      width:100%!important;height:100%!important;object-fit:cover;
-    }
+  /* Vídeo de la cámara y canvas de three.js — ambos a pantalla completa */
+  #ar-stage{position:fixed;inset:0;overflow:hidden;}
+  #ar-stage > video, #ar-stage > canvas{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:100%!important;height:100%!important;object-fit:cover;
+  }
 
-    /* HUD superior */
-    .top{position:fixed;top:0;left:0;right:0;padding:12px 14px;display:flex;justify-content:space-between;gap:10px;
-      pointer-events:none;z-index:10;}
-    .tag{font-family:var(--mono);font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent);
-      border:1px solid var(--border);padding:3px 8px;border-radius:2px;background:rgba(10,12,16,.65);backdrop-filter:blur(8px);}
-    .title h1{font-size:14px;font-weight:800;margin-top:6px;line-height:1;color:#fff;}
-    .title h1 em{font-style:normal;color:var(--accent);}
+  /* HUD superior */
+  .top{position:fixed;top:0;left:0;right:0;padding:12px 14px;display:flex;justify-content:space-between;gap:10px;
+    pointer-events:none;z-index:10;}
+  .tag{font-family:var(--mono);font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent);
+    border:1px solid var(--border);padding:3px 8px;border-radius:2px;background:rgba(10,12,16,.65);backdrop-filter:blur(8px);}
+  .title h1{font-size:14px;font-weight:800;margin-top:6px;line-height:1;color:#fff;}
+  .title h1 em{font-style:normal;color:var(--accent);}
 
-    .pill{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:5px 10px;border-radius:14px;
-      background:rgba(10,12,16,.7);backdrop-filter:blur(8px);border:1px solid var(--border);
-      display:flex;align-items:center;gap:6px;white-space:nowrap;}
-    .pill .d{width:7px;height:7px;border-radius:50%;box-shadow:0 0 8px currentColor;}
-    .pill.ar{color:var(--accent3);} .pill.ar .d{background:var(--accent3);}
-    .pill.imu{color:var(--warn);} .pill.imu .d{background:var(--warn);}
-    .pill.idle{color:var(--muted);} .pill.idle .d{background:var(--muted);}
+  .pill{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:5px 10px;border-radius:14px;
+    background:rgba(10,12,16,.7);backdrop-filter:blur(8px);border:1px solid var(--border);
+    display:flex;align-items:center;gap:6px;white-space:nowrap;}
+  .pill .d{width:7px;height:7px;border-radius:50%;box-shadow:0 0 8px currentColor;}
+  .pill.ar{color:var(--accent3);} .pill.ar .d{background:var(--accent3);}
+  .pill.imu{color:var(--warn);} .pill.imu .d{background:var(--warn);}
+  .pill.idle{color:var(--muted);} .pill.idle .d{background:var(--muted);}
 
-    /* Mini-mapa cenital del espacio */
-    #minimap{position:fixed;right:12px;top:60px;width:140px;height:140px;
-      background:rgba(10,12,16,.75);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:10px;z-index:10;
-      overflow:hidden;}
-    #minimap canvas{width:100%;height:100%;display:block;}
-    #minimap .ml{position:absolute;top:4px;left:6px;font-family:var(--mono);font-size:8px;color:var(--muted);letter-spacing:1.5px;}
+  /* Mini-mapa cenital del espacio */
+  #minimap{position:fixed;right:12px;top:60px;width:140px;height:140px;
+    background:rgba(10,12,16,.75);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:10px;z-index:10;
+    overflow:hidden;}
+  #minimap canvas{width:100%;height:100%;display:block;}
+  #minimap .ml{position:absolute;top:4px;left:6px;font-family:var(--mono);font-size:8px;color:var(--muted);letter-spacing:1.5px;}
 
-    /* HUD inferior + controles */
-    .bottom{position:fixed;bottom:0;left:0;right:0;background:rgba(10,12,16,.85);backdrop-filter:blur(18px);
-      border-top:1px solid var(--border);border-radius:14px 14px 0 0;padding:10px 14px calc(10px + env(safe-area-inset-bottom));z-index:10;}
-    .telerow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:9px;}
-    .tcell{background:rgba(13,16,24,.7);border:1px solid var(--border);border-radius:7px;padding:6px 7px;font-family:var(--mono);}
-    .tcell .lbl{font-size:8px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;}
-    .tcell .val{font-size:13px;font-weight:700;color:var(--text);margin-top:1px;}
-    .tcell .val.ac{color:var(--accent);} .tcell .val.a2{color:var(--accent2);} .tcell .val.a3{color:var(--accent3);}
+  /* HUD inferior + controles */
+  .bottom{position:fixed;bottom:0;left:0;right:0;background:rgba(10,12,16,.85);backdrop-filter:blur(18px);
+    border-top:1px solid var(--border);border-radius:14px 14px 0 0;padding:10px 14px calc(10px + env(safe-area-inset-bottom));z-index:10;}
+  .telerow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:9px;}
+  .tcell{background:rgba(13,16,24,.7);border:1px solid var(--border);border-radius:7px;padding:6px 7px;font-family:var(--mono);}
+  .tcell .lbl{font-size:8px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;}
+  .tcell .val{font-size:13px;font-weight:700;color:var(--text);margin-top:1px;}
+  .tcell .val.ac{color:var(--accent);} .tcell .val.a2{color:var(--accent2);} .tcell .val.a3{color:var(--accent3);}
 
-    .btnrow{display:flex;gap:8px;}
-    .btn{flex:1;padding:11px;border:none;border-radius:9px;font-family:var(--mono);font-weight:700;font-size:11px;
-      letter-spacing:.06em;cursor:pointer;transition:transform .08s,box-shadow .2s;text-transform:uppercase;}
-    .btn:active{transform:scale(.96);}
-    .btn-p{background:var(--accent);color:#001a1f;box-shadow:0 3px 14px rgba(0,229,255,.3);}
-    .btn-s{background:var(--accent2);color:#1a0008;box-shadow:0 3px 14px rgba(255,75,110,.3);}
-    .btn-g{background:transparent;color:var(--text);border:1px solid var(--border);}
-    .btn[disabled]{opacity:.35;pointer-events:none;}
+  .btnrow{display:flex;gap:8px;}
+  .btn{flex:1;padding:11px;border:none;border-radius:9px;font-family:var(--mono);font-weight:700;font-size:11px;
+    letter-spacing:.06em;cursor:pointer;transition:transform .08s,box-shadow .2s;text-transform:uppercase;}
+  .btn:active{transform:scale(.96);}
+  .btn-p{background:var(--accent);color:#001a1f;box-shadow:0 3px 14px rgba(0,229,255,.3);}
+  .btn-s{background:var(--accent2);color:#1a0008;box-shadow:0 3px 14px rgba(255,75,110,.3);}
+  .btn-g{background:transparent;color:var(--text);border:1px solid var(--border);}
+  .btn[disabled]{opacity:.35;pointer-events:none;}
 
-    /* Elastic bar */
-    .ebar{margin-top:8px;font-family:var(--mono);font-size:8.5px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
-    .etrack{background:#0d1018;border:1px solid var(--border);border-radius:3px;height:5px;overflow:hidden;margin-top:3px;}
-    .efill{height:100%;width:0%;background:var(--accent3);transition:width .15s,background .3s;}
+  /* Elastic bar */
+  .ebar{margin-top:8px;font-family:var(--mono);font-size:8.5px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+  .etrack{background:#0d1018;border:1px solid var(--border);border-radius:3px;height:5px;overflow:hidden;margin-top:3px;}
+  .efill{height:100%;width:0%;background:var(--accent3);transition:width .15s,background .3s;}
 
-    /* Gate inicial */
-    .gate{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;
-      text-align:center;padding:28px;background:radial-gradient(circle at 50% 35%,#0e1521,#05070b);overflow-y:auto;}
-    .gate.hidden{display:none;}
-    .gate .tag{margin-bottom:14px;}
-    .gate h2{font-size:22px;font-weight:800;line-height:1.16;margin-bottom:10px;max-width:330px;letter-spacing:-.4px;color:#fff;}
-    .gate h2 em{font-style:normal;color:var(--accent);}
-    .gate p{color:var(--muted);font-size:12.5px;line-height:1.55;max-width:330px;margin-bottom:8px;}
-    .gate .steps{text-align:left;max-width:340px;margin:12px 0 18px;}
-    .gate .steps .s{display:flex;gap:10px;margin-bottom:9px;font-size:12px;line-height:1.5;color:var(--text);}
-    .gate .steps .n{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#001a1f;
-      font-family:var(--mono);font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;}
-    .gate .steps b{color:var(--accent);}
-    .gate .marker-tip{font-family:var(--mono);font-size:10.5px;color:var(--accent3);background:rgba(127,255,106,.08);
-      border:1px solid rgba(127,255,106,.3);border-radius:8px;padding:10px 12px;max-width:340px;margin-bottom:14px;text-align:left;line-height:1.5;}
-    .gate .btn{max-width:340px;width:100%;padding:13px;}
-    .warnmsg{color:var(--accent2);font-size:11px;font-family:var(--mono);margin-top:10px;max-width:340px;line-height:1.5;}
+  /* Gate inicial */
+  .gate{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:28px;background:radial-gradient(circle at 50% 35%,#0e1521,#05070b);overflow-y:auto;}
+  .gate.hidden{display:none;}
+  .gate .tag{margin-bottom:14px;}
+  .gate h2{font-size:22px;font-weight:800;line-height:1.16;margin-bottom:10px;max-width:330px;letter-spacing:-.4px;color:#fff;}
+  .gate h2 em{font-style:normal;color:var(--accent);}
+  .gate p{color:var(--muted);font-size:12.5px;line-height:1.55;max-width:330px;margin-bottom:8px;}
+  .gate .steps{text-align:left;max-width:340px;margin:12px 0 18px;}
+  .gate .steps .s{display:flex;gap:10px;margin-bottom:9px;font-size:12px;line-height:1.5;color:var(--text);}
+  .gate .steps .n{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#001a1f;
+    font-family:var(--mono);font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;}
+  .gate .steps b{color:var(--accent);}
+  .gate .marker-tip{font-family:var(--mono);font-size:10.5px;color:var(--accent3);background:rgba(127,255,106,.08);
+    border:1px solid rgba(127,255,106,.3);border-radius:8px;padding:10px 12px;max-width:340px;margin-bottom:14px;text-align:left;line-height:1.5;}
+  .gate .btn{max-width:340px;width:100%;padding:13px;}
+  .warnmsg{color:var(--accent2);font-size:11px;font-family:var(--mono);margin-top:10px;max-width:340px;line-height:1.5;}
 
-    /* indicador de paso pulsante */
-    .stepdot{position:fixed;left:12px;top:60px;width:38px;height:38px;border-radius:50%;z-index:10;
-      background:rgba(245,197,66,.15);border:2px solid var(--warn);display:flex;align-items:center;justify-content:center;
-      font-family:var(--mono);font-size:12px;font-weight:700;color:var(--warn);transition:transform .1s,background .1s;}
-    .stepdot.flash{transform:scale(1.3);background:rgba(245,197,66,.45);}
-  </style>
-  </head>
-  <body>
+  /* indicador de paso pulsante */
+  .stepdot{position:fixed;left:12px;top:60px;width:38px;height:38px;border-radius:50%;z-index:10;
+    background:rgba(245,197,66,.15);border:2px solid var(--warn);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:12px;font-weight:700;color:var(--warn);transition:transform .1s,background .1s;}
+  .stepdot.flash{transform:scale(1.3);background:rgba(245,197,66,.45);}
+</style>
+</head>
+<body>
 
-  <!-- escenario AR: video + three.js canvas se inyectan aquí -->
-  <div id="ar-stage"></div>
+<!-- escenario AR: video + three.js canvas se inyectan aquí -->
+<div id="ar-stage"></div>
 
-  <!-- HUD -->
-  <div class="top">
-    <div class="title"><span class="tag">AR.js + IMU</span><h1>Marcador como <em>ancla</em></h1></div>
-    <div id="pill" class="pill idle"><span class="d"></span><span id="pillTxt">EN ESPERA</span></div>
+<!-- HUD -->
+<div class="top">
+  <div class="title"><span class="tag">AR.js + IMU</span><h1>Marcador como <em>ancla</em></h1></div>
+  <div id="pill" class="pill idle"><span class="d"></span><span id="pillTxt">EN ESPERA</span></div>
+</div>
+
+<div id="minimap"><span class="ml">MINIMAPA</span><canvas id="mmCanvas"></canvas></div>
+
+<div class="stepdot" id="stepdot">0</div>
+
+<!-- HUD inferior -->
+<div class="bottom">
+  <div class="telerow">
+    <div class="tcell"><div class="lbl">pos X</div><div class="val ac" id="t_x">0.00 m</div></div>
+    <div class="tcell"><div class="lbl">pos Z</div><div class="val ac" id="t_z">0.00 m</div></div>
+    <div class="tcell"><div class="lbl">pasos</div><div class="val a2" id="t_steps">0</div></div>
+    <div class="tcell"><div class="lbl">atenuación</div><div class="val a3" id="t_atten">0%</div></div>
   </div>
-
-  <div id="minimap"><span class="ml">MINIMAPA</span><canvas id="mmCanvas"></canvas></div>
-
-  <div class="stepdot" id="stepdot">0</div>
-
-  <!-- HUD inferior -->
-  <div class="bottom">
-    <div class="telerow">
-      <div class="tcell"><div class="lbl">pos X</div><div class="val ac" id="t_x">0.00 m</div></div>
-      <div class="tcell"><div class="lbl">pos Z</div><div class="val ac" id="t_z">0.00 m</div></div>
-      <div class="tcell"><div class="lbl">pasos</div><div class="val a2" id="t_steps">0</div></div>
-      <div class="tcell"><div class="lbl">atenuación</div><div class="val a3" id="t_atten">0%</div></div>
-    </div>
-    <div class="btnrow">
-      <button class="btn btn-g" id="btn-cal" disabled>Calibrar R (caminar)</button>
-      <button class="btn btn-s" id="btn-setR" disabled>Fijar R aquí</button>
-      <button class="btn btn-p" id="btn-recenter" disabled>Recentrar</button>
-    </div>
-    <div class="ebar"><span id="elabel">Espera al primer fix del marcador…</span>
-      <div class="etrack"><div class="efill" id="efill"></div></div>
-    </div>
+  <div class="btnrow">
+    <button class="btn btn-g" id="btn-cal" disabled>Calibrar R (caminar)</button>
+    <button class="btn btn-s" id="btn-setR" disabled>Fijar R aquí</button>
+    <button class="btn btn-p" id="btn-recenter" disabled>Recentrar</button>
   </div>
-
-  <!-- Gate inicial -->
-  <div class="gate" id="gate">
-    <span class="tag">Tracking visual + inercial</span>
-    <h2>Marcador AR<br>como <em>ancla</em> del cuarto</h2>
-    <p>El marcador físico en el centro corrige la deriva del IMU cada vez que la cámara lo ve. Es como tener un ARCore casero.</p>
-    <div class="marker-tip">
-      📄 <b>Necesitas el marcador impreso.</b> Abre <code>marker_hiro.html</code> en cualquier pantalla, o imprime la imagen Hiro estándar y colócala plana en el centro del cuarto.
-    </div>
-    <div class="steps">
-      <div class="s"><span class="n">1</span><span>Coloca el <b>marcador Hiro</b> en el centro del cuarto, plano y bien iluminado.</span></div>
-      <div class="s"><span class="n">2</span><span>Apunta la cámara al marcador hasta ver el <b>cubo verde</b> sobre él (ancla detectada).</span></div>
-      <div class="s"><span class="n">3</span><span>Pulsa <b>Calibrar R</b> y camina hacia una pared contando pasos; pulsa <b>Fijar R</b> al llegar.</span></div>
-      <div class="s"><span class="n">4</span><span>Recorre el cuarto: si pierdes el marcador, los pasos cubren el hueco hasta volver a verlo.</span></div>
-    </div>
-    <button class="btn btn-p" id="btn-start">Iniciar cámara</button>
-    <div class="warnmsg" id="gateWarn"></div>
+  <div class="ebar"><span id="elabel">Espera al primer fix del marcador…</span>
+    <div class="etrack"><div class="efill" id="efill"></div></div>
   </div>
+</div>
 
-  <!-- IMPORTANTE: el orden importa. AR.js asume que THREE ya está en window.
-       three r130 es la última versión conocida compatible con AR.js sin parches. -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.130.1/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/three.js/build/ar.js"></script>
+<!-- Gate inicial -->
+<div class="gate" id="gate">
+  <span class="tag">Tracking visual + inercial</span>
+  <h2>Marcador AR<br>como <em>ancla</em> del cuarto</h2>
+  <p>El marcador físico en el centro corrige la deriva del IMU cada vez que la cámara lo ve. Es como tener un ARCore casero.</p>
+  <div class="marker-tip">
+    📄 <b>Necesitas el marcador impreso.</b> Abre <code>marker_hiro.html</code> en cualquier pantalla, o imprime la imagen Hiro estándar y colócala plana en el centro del cuarto.
+  </div>
+  <div class="steps">
+    <div class="s"><span class="n">1</span><span>Coloca el <b>marcador Hiro</b> en el centro del cuarto, plano y bien iluminado.</span></div>
+    <div class="s"><span class="n">2</span><span>Apunta la cámara al marcador hasta ver el <b>cubo verde</b> sobre él (ancla detectada).</span></div>
+    <div class="s"><span class="n">3</span><span>Pulsa <b>Calibrar R</b> y camina hacia una pared contando pasos; pulsa <b>Fijar R</b> al llegar.</span></div>
+    <div class="s"><span class="n">4</span><span>Recorre el cuarto: si pierdes el marcador, los pasos cubren el hueco hasta volver a verlo.</span></div>
+  </div>
+  <button class="btn btn-p" id="btn-start">Iniciar cámara</button>
+  <div class="warnmsg" id="gateWarn"></div>
+</div>
 
-  <script>
-  /* ══════════════ ESTADO ══════════════ */
-  const Estado = {
-    arReady:false,         // AR.js arrancado
-    markerVisible:false,   // ¿el marcador está en cámara ahora?
-    // posición de la cámara respecto al marcador (m) — viene de AR.js cuando markerVisible
-    arPos:{x:0,y:0,z:0},
-    // posición fusionada (lo que mostramos / usamos para elastic capping)
-    pos:{x:0,z:0},
-    // posición estimada solo por pasos (para cubrir cuando se pierde marcador)
-    imuPos:{x:0,z:0},
-    // calibración del cuarto
-    R:0, calibrating:false, refPosForR:null,
-    // pasos
-    pasos:0, heading:0, strideM:0.70,
-    // misc
-    lastFixTime:0
-  };
-
-  /* ══════════════ ELASTIC CAPPING (tu lógica) ══════════════ */
-  function elasticCapping(pos, R){
-    if(!R||R<=0) return {x:pos.x,z:pos.z,ratio:0,atenuacion:0};
-    const dist = Math.hypot(pos.x,pos.z);
-    const ratio = Math.min(dist/R,2.0);
-    if(dist<=0) return {x:0,z:0,ratio:0,atenuacion:0};
-    const zonaLibre=0.70;
-    if(ratio<=zonaLibre) return {x:pos.x,z:pos.z,ratio,atenuacion:0};
-    const exceso=(ratio-zonaLibre)/(1.0-zonaLibre);
-    const factorLog=Math.log(1+exceso*1.5)/Math.log(2.5);
-    const distEf=R*zonaLibre+(R-R*zonaLibre)*(1-factorLog*0.65);
-    return {x:(pos.x/dist)*distEf, z:(pos.z/dist)*distEf, ratio:Math.min(ratio,1), atenuacion:Math.min(factorLog*100,100)};
+<!-- AR.js 3.4.7+ usa MÓDULOS ES con importmap. La forma clásica de <script> está obsoleta. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js",
+    "threex": "https://raw.githack.com/AR-js-org/AR.js/3.4.7/three.js/build/ar-threex.mjs"
   }
+}
+</script>
 
-  /* ══════════════ DETECCIÓN DE PASOS ══════════════ */
-  const STEP={thresh:1.1,minInterval:280,lastStepMs:0,ema:0,emaA:0.85,armed:true};
-  function detectStep(mag,now){
-    STEP.ema=STEP.emaA*STEP.ema+(1-STEP.emaA)*mag;
-    const dyn=mag-STEP.ema;
-    if(STEP.armed&&dyn>STEP.thresh&&(now-STEP.lastStepMs)>STEP.minInterval){STEP.armed=false;STEP.lastStepMs=now;return true;}
-    if(dyn<STEP.thresh*0.3) STEP.armed=true;
-    return false;
-  }
-  function onOrient(e){ if(e.alpha!==null) Estado.heading=e.alpha*Math.PI/180; }
-  function onMotion(e){
-    if(!Estado.arReady) return;
-    const a=e.accelerationIncludingGravity||e.acceleration;
-    if(!a||a.x===null) return;
-    if(detectStep(Math.hypot(a.x,a.y,a.z), performance.now())) onStep();
-  }
-  function onStep(){
-    Estado.pasos++;
-    const dx=Math.sin(Estado.heading)*Estado.strideM;
-    const dz=-Math.cos(Estado.heading)*Estado.strideM;
-    // El IMU SOLO se usa cuando el marcador no está visible (relleno)
-    Estado.imuPos.x += dx;
-    Estado.imuPos.z += dz;
-    // feedback
-    const sd=document.getElementById('stepdot');
-    sd.textContent=Estado.pasos;
-    sd.classList.add('flash'); setTimeout(()=>sd.classList.remove('flash'),120);
-  }
+<script type="module">
+import * as THREE from 'three';
+import { ArToolkitSource, ArToolkitContext, ArMarkerControls } from 'threex';
 
-  /* ══════════════ SCENE AR.js + Three.js ══════════════ */
-  let scene, camera, renderer, arToolkitSource, arToolkitContext, markerRoot, anchorCube;
+// Exponemos las clases en window para que el resto del script las use con los nombres conocidos
+window.THREE = THREE;
+window.THREEx = { ArToolkitSource, ArToolkitContext, ArMarkerControls };
+window.__ARJS_READY__ = true;
+console.log('[AR.js] cargado correctamente vía importmap');
+</script>
 
-  function setupAR(){
-    scene = new THREE.Scene();
-    camera = new THREE.Camera(); scene.add(camera);
+<script>
+/* ══════════════ ESTADO ══════════════ */
+const Estado = {
+  arReady:false,         // AR.js arrancado
+  markerVisible:false,   // ¿el marcador está en cámara ahora?
+  // posición de la cámara respecto al marcador (m) — viene de AR.js cuando markerVisible
+  arPos:{x:0,y:0,z:0},
+  // posición fusionada (lo que mostramos / usamos para elastic capping)
+  pos:{x:0,z:0},
+  // posición estimada solo por pasos (para cubrir cuando se pierde marcador)
+  imuPos:{x:0,z:0},
+  // calibración del cuarto
+  R:0, calibrating:false, refPosForR:null,
+  // pasos
+  pasos:0, heading:0, strideM:0.70,
+  // misc
+  lastFixTime:0
+};
 
-    renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
-    renderer.setClearColor(new THREE.Color('black'),0);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.domElement.style.position='absolute';
-    renderer.domElement.style.top='0'; renderer.domElement.style.left='0';
-    document.getElementById('ar-stage').appendChild(renderer.domElement);
+/* ══════════════ ELASTIC CAPPING (tu lógica) ══════════════ */
+function elasticCapping(pos, R){
+  if(!R||R<=0) return {x:pos.x,z:pos.z,ratio:0,atenuacion:0};
+  const dist = Math.hypot(pos.x,pos.z);
+  const ratio = Math.min(dist/R,2.0);
+  if(dist<=0) return {x:0,z:0,ratio:0,atenuacion:0};
+  const zonaLibre=0.70;
+  if(ratio<=zonaLibre) return {x:pos.x,z:pos.z,ratio,atenuacion:0};
+  const exceso=(ratio-zonaLibre)/(1.0-zonaLibre);
+  const factorLog=Math.log(1+exceso*1.5)/Math.log(2.5);
+  const distEf=R*zonaLibre+(R-R*zonaLibre)*(1-factorLog*0.65);
+  return {x:(pos.x/dist)*distEf, z:(pos.z/dist)*distEf, ratio:Math.min(ratio,1), atenuacion:Math.min(factorLog*100,100)};
+}
 
-    scene.add(new THREE.AmbientLight(0xffffff,0.9));
-    const dl=new THREE.DirectionalLight(0xffffff,0.7); dl.position.set(2,4,2); scene.add(dl);
+/* ══════════════ DETECCIÓN DE PASOS ══════════════ */
+const STEP={thresh:1.1,minInterval:280,lastStepMs:0,ema:0,emaA:0.85,armed:true};
+function detectStep(mag,now){
+  STEP.ema=STEP.emaA*STEP.ema+(1-STEP.emaA)*mag;
+  const dyn=mag-STEP.ema;
+  if(STEP.armed&&dyn>STEP.thresh&&(now-STEP.lastStepMs)>STEP.minInterval){STEP.armed=false;STEP.lastStepMs=now;return true;}
+  if(dyn<STEP.thresh*0.3) STEP.armed=true;
+  return false;
+}
+function onOrient(e){ if(e.alpha!==null) Estado.heading=e.alpha*Math.PI/180; }
+function onMotion(e){
+  if(!Estado.arReady) return;
+  const a=e.accelerationIncludingGravity||e.acceleration;
+  if(!a||a.x===null) return;
+  if(detectStep(Math.hypot(a.x,a.y,a.z), performance.now())) onStep();
+}
+function onStep(){
+  Estado.pasos++;
+  const dx=Math.sin(Estado.heading)*Estado.strideM;
+  const dz=-Math.cos(Estado.heading)*Estado.strideM;
+  // El IMU SOLO se usa cuando el marcador no está visible (relleno)
+  Estado.imuPos.x += dx;
+  Estado.imuPos.z += dz;
+  // feedback
+  const sd=document.getElementById('stepdot');
+  sd.textContent=Estado.pasos;
+  sd.classList.add('flash'); setTimeout(()=>sd.classList.remove('flash'),120);
+}
 
-    // Fuente de video (cámara trasera)
-    arToolkitSource = new THREEx.ArToolkitSource({sourceType:'webcam', sourceWidth:1280, sourceHeight:960});
-    arToolkitSource.init(()=>{ setTimeout(onResize,200); }, (err)=>{
-      const m=err&&err.name?err.name+': '+(err.message||''):'No se pudo acceder a la cámara';
-      showError(m+' · Revisa permiso de cámara y que ningún otro app la esté usando.');
-    });
+/* ══════════════ SCENE AR.js + Three.js ══════════════ */
+let scene, camera, renderer, arToolkitSource, arToolkitContext, markerRoot, anchorCube;
 
-    // Contexto AR
-    arToolkitContext = new THREEx.ArToolkitContext({
-      cameraParametersUrl: 'https://raw.githack.com/AR-js-org/AR.js/master/data/data/camera_para.dat',
-      detectionMode:'mono', maxDetectionRate:30, canvasWidth:640, canvasHeight:480
-    });
-    arToolkitContext.init(()=>{ camera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix()); });
+function setupAR(){
+  scene = new THREE.Scene();
+  camera = new THREE.Camera(); scene.add(camera);
 
-    // Marker root: lo que se "ancla" al Hiro físico
-    markerRoot = new THREE.Group(); scene.add(markerRoot);
-    new THREEx.ArMarkerControls(arToolkitContext, markerRoot, {
-      type:'pattern',
-      patternUrl:'https://raw.githack.com/AR-js-org/AR.js/master/data/data/patt.hiro'
-    });
+  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setClearColor(new THREE.Color('black'),0);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.domElement.style.position='absolute';
+  renderer.domElement.style.top='0'; renderer.domElement.style.left='0';
+  document.getElementById('ar-stage').appendChild(renderer.domElement);
 
-    // Cubo verde sobre el marcador (feedback visual de "ancla detectada")
-    anchorCube = new THREE.Mesh(
-      new THREE.BoxGeometry(1,1,1),
-      new THREE.MeshStandardMaterial({color:0x7fff6a, emissive:0x7fff6a, emissiveIntensity:.3, metalness:.3, roughness:.4, transparent:true, opacity:.85})
-    );
-    anchorCube.position.y=0.5;
-    markerRoot.add(anchorCube);
-    // ejes para que sepas la orientación del marcador
-    markerRoot.add(new THREE.AxesHelper(1));
+  scene.add(new THREE.AmbientLight(0xffffff,0.9));
+  const dl=new THREE.DirectionalLight(0xffffff,0.7); dl.position.set(2,4,2); scene.add(dl);
 
-    window.addEventListener('resize',onResize);
-  }
-  function onResize(){
-    arToolkitSource.onResizeElement();
-    arToolkitSource.copyElementSizeTo(renderer.domElement);
-    if(arToolkitContext.arController) arToolkitSource.copyElementSizeTo(arToolkitContext.arController.canvas);
-  }
+  // Fuente de video (cámara trasera)
+  arToolkitSource = new THREEx.ArToolkitSource({sourceType:'webcam', sourceWidth:1280, sourceHeight:960});
+  arToolkitSource.init(()=>{ setTimeout(onResize,200); }, (err)=>{
+    const m=err&&err.name?err.name+': '+(err.message||''):'No se pudo acceder a la cámara';
+    showError(m+' · Revisa permiso de cámara y que ningún otro app la esté usando.');
+  });
 
-  /* ══════════════ LOOP ══════════════ */
-  const tmpV = new THREE.Vector3();
-  function loop(){
-    if(arToolkitSource && arToolkitSource.ready) arToolkitContext.update(arToolkitSource.domElement);
+  // Contexto AR
+  arToolkitContext = new THREEx.ArToolkitContext({
+    cameraParametersUrl: 'https://raw.githack.com/AR-js-org/AR.js/master/data/data/camera_para.dat',
+    detectionMode:'mono', maxDetectionRate:30, canvasWidth:640, canvasHeight:480
+  });
+  arToolkitContext.init(()=>{ camera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix()); });
 
-    const wasVisible = Estado.markerVisible;
-    Estado.markerVisible = markerRoot && markerRoot.visible;
+  // Marker root: lo que se "ancla" al Hiro físico
+  markerRoot = new THREE.Group(); scene.add(markerRoot);
+  new THREEx.ArMarkerControls(arToolkitContext, markerRoot, {
+    type:'pattern',
+    patternUrl:'https://raw.githack.com/AR-js-org/AR.js/master/data/data/patt.hiro'
+  });
 
-    if(Estado.markerVisible){
-      // Posición de la CÁMARA respecto al marcador.
-      // markerRoot tiene la pose del marcador en el frame de cámara; queremos lo inverso:
-      // posición del observador (teléfono) respecto al marcador en su frame.
-      // Truco: invertir la matriz mundial del marker_root.
-      markerRoot.updateMatrixWorld(true);
-      const inv = new THREE.Matrix4().copy(markerRoot.matrixWorld).invert();
-      // la posición de la cámara en mundo es (0,0,0); transformada al frame del marcador:
-      tmpV.set(0,0,0).applyMatrix4(inv);
-      Estado.arPos.x = tmpV.x; Estado.arPos.y = tmpV.y; Estado.arPos.z = tmpV.z;
-      Estado.lastFixTime = performance.now();
+  // Cubo verde sobre el marcador (feedback visual de "ancla detectada")
+  anchorCube = new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshStandardMaterial({color:0x7fff6a, emissive:0x7fff6a, emissiveIntensity:.3, metalness:.3, roughness:.4, transparent:true, opacity:.85})
+  );
+  anchorCube.position.y=0.5;
+  markerRoot.add(anchorCube);
+  // ejes para que sepas la orientación del marcador
+  markerRoot.add(new THREE.AxesHelper(1));
 
-      // Fusión: cuando hay fix, la posición ES la del marcador. Reseteamos el IMU para futuras pérdidas.
-      Estado.pos.x = Estado.arPos.x;
-      Estado.pos.z = Estado.arPos.z;
-      Estado.imuPos.x = Estado.arPos.x;
-      Estado.imuPos.z = Estado.arPos.z;
+  window.addEventListener('resize',onResize);
+}
+function onResize(){
+  arToolkitSource.onResizeElement();
+  arToolkitSource.copyElementSizeTo(renderer.domElement);
+  if(arToolkitContext.arController) arToolkitSource.copyElementSizeTo(arToolkitContext.arController.canvas);
+}
 
-      if(!wasVisible){
-        document.getElementById('elabel').textContent='Marcador detectado · tracking absoluto';
-      }
-    }else{
-      // Sin marcador: usa la última posición + el IMU acumulado
-      Estado.pos.x = Estado.imuPos.x;
-      Estado.pos.z = Estado.imuPos.z;
+/* ══════════════ LOOP ══════════════ */
+const tmpV = new THREE.Vector3();
+function loop(){
+  if(arToolkitSource && arToolkitSource.ready) arToolkitContext.update(arToolkitSource.domElement);
+
+  const wasVisible = Estado.markerVisible;
+  Estado.markerVisible = markerRoot && markerRoot.visible;
+
+  if(Estado.markerVisible){
+    // Posición de la CÁMARA respecto al marcador.
+    // markerRoot tiene la pose del marcador en el frame de cámara; queremos lo inverso:
+    // posición del observador (teléfono) respecto al marcador en su frame.
+    // Truco: invertir la matriz mundial del marker_root.
+    markerRoot.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(markerRoot.matrixWorld).invert();
+    // la posición de la cámara en mundo es (0,0,0); transformada al frame del marcador:
+    tmpV.set(0,0,0).applyMatrix4(inv);
+    Estado.arPos.x = tmpV.x; Estado.arPos.y = tmpV.y; Estado.arPos.z = tmpV.z;
+    Estado.lastFixTime = performance.now();
+
+    // Fusión: cuando hay fix, la posición ES la del marcador. Reseteamos el IMU para futuras pérdidas.
+    Estado.pos.x = Estado.arPos.x;
+    Estado.pos.z = Estado.arPos.z;
+    Estado.imuPos.x = Estado.arPos.x;
+    Estado.imuPos.z = Estado.arPos.z;
+
+    if(!wasVisible){
+      document.getElementById('elabel').textContent='Marcador detectado · tracking absoluto';
     }
-
-    // Estado / pill
-    const pill=document.getElementById('pill'), pt=document.getElementById('pillTxt');
-    if(!Estado.arReady){pill.className='pill idle';pt.textContent='EN ESPERA';}
-    else if(Estado.markerVisible){pill.className='pill ar';pt.textContent='ANCLA VISUAL';}
-    else{pill.className='pill imu';pt.textContent='SOLO IMU';}
-
-    // Aplicar elastic capping si hay R
-    let aten=0, ratio=0;
-    if(Estado.R>0){
-      const r=elasticCapping(Estado.pos, Estado.R);
-      // sobrescribir si está fuera de la zona libre (el capping retiene visualmente)
-      Estado.pos.x=r.x; Estado.pos.z=r.z;
-      aten=r.atenuacion; ratio=r.ratio;
-    }
-
-    // Render AR
-    renderer.render(scene,camera);
-
-    // UI
-    document.getElementById('t_x').textContent=Estado.pos.x.toFixed(2)+' m';
-    document.getElementById('t_z').textContent=Estado.pos.z.toFixed(2)+' m';
-    document.getElementById('t_steps').textContent=Estado.pasos;
-    document.getElementById('t_atten').textContent=aten.toFixed(0)+'%';
-    // barra elástica
-    const efill=document.getElementById('efill'), elabel=document.getElementById('elabel');
-    const pct=Math.min(ratio*100,100); efill.style.width=pct+'%';
-    if(Estado.R>0){
-      if(ratio<.7){efill.style.background='var(--accent3)';elabel.textContent=`Zona libre · ${pct.toFixed(0)}%`;}
-      else if(ratio<.9){efill.style.background='var(--warn)';elabel.textContent=`Atenuación suave: ${aten.toFixed(0)}%`;}
-      else{efill.style.background='var(--accent2)';elabel.textContent=`ELASTIC CAPPING: ${aten.toFixed(0)}%`;}
-    }
-
-    // Mini-mapa
-    drawMinimap(ratio);
-
-    requestAnimationFrame(loop);
+  }else{
+    // Sin marcador: usa la última posición + el IMU acumulado
+    Estado.pos.x = Estado.imuPos.x;
+    Estado.pos.z = Estado.imuPos.z;
   }
 
-  /* ══════════════ MINI-MAPA ══════════════ */
-  const mm=document.getElementById('mmCanvas'); const mctx=mm.getContext('2d');
-  function fitMM(){ const r=mm.parentElement.getBoundingClientRect(); const dpr=devicePixelRatio||1; mm.width=r.width*dpr; mm.height=r.height*dpr; mctx.setTransform(1,0,0,1,0,0); mctx.scale(dpr,dpr); mm._w=r.width; mm._h=r.height; }
-  fitMM(); window.addEventListener('resize',fitMM);
-  function drawMinimap(ratio){
-    if(!mm._w) return;
-    const W=mm._w, H=mm._h, cx=W/2, cy=H/2;
-    mctx.clearRect(0,0,W,H);
-    mctx.fillStyle='rgba(13,16,24,0)'; mctx.fillRect(0,0,W,H);
-    // escala: el R operativo ocupa 0.42 del minimapa
-    const scale = Estado.R>0 ? (W*0.42/Estado.R) : 30;
-    // grilla
-    mctx.strokeStyle='rgba(30,37,53,.6)'; mctx.lineWidth=.5;
-    for(let i=-3;i<=3;i++){ mctx.beginPath();mctx.moveTo(cx+i*scale,0);mctx.lineTo(cx+i*scale,H);mctx.stroke();
-                            mctx.beginPath();mctx.moveTo(0,cy+i*scale);mctx.lineTo(W,cy+i*scale);mctx.stroke();}
-    // círculos R
-    if(Estado.R>0){
-      mctx.beginPath();mctx.arc(cx,cy,Estado.R*scale,0,Math.PI*2);mctx.strokeStyle='rgba(255,75,110,.7)';mctx.lineWidth=1.5;mctx.stroke();
-      mctx.beginPath();mctx.arc(cx,cy,Estado.R*scale*.7,0,Math.PI*2);mctx.strokeStyle='rgba(0,229,255,.4)';mctx.setLineDash([3,3]);mctx.lineWidth=1;mctx.stroke();mctx.setLineDash([]);
-    }
-    // origen (marcador)
-    mctx.beginPath();mctx.arc(cx,cy,4,0,Math.PI*2);mctx.fillStyle='#00e5ff';mctx.fill();
-    // tú
-    const px=cx+Estado.pos.x*scale, py=cy+Estado.pos.z*scale;
-    mctx.beginPath();mctx.arc(px,py,6,0,Math.PI*2);
-    mctx.fillStyle=Estado.markerVisible?'rgba(127,255,106,.4)':'rgba(245,197,66,.4)';mctx.fill();
-    mctx.strokeStyle=Estado.markerVisible?'#7fff6a':'#f5c542';mctx.lineWidth=2;mctx.stroke();
+  // Estado / pill
+  const pill=document.getElementById('pill'), pt=document.getElementById('pillTxt');
+  if(!Estado.arReady){pill.className='pill idle';pt.textContent='EN ESPERA';}
+  else if(Estado.markerVisible){pill.className='pill ar';pt.textContent='ANCLA VISUAL';}
+  else{pill.className='pill imu';pt.textContent='SOLO IMU';}
+
+  // Aplicar elastic capping si hay R
+  let aten=0, ratio=0;
+  if(Estado.R>0){
+    const r=elasticCapping(Estado.pos, Estado.R);
+    // sobrescribir si está fuera de la zona libre (el capping retiene visualmente)
+    Estado.pos.x=r.x; Estado.pos.z=r.z;
+    aten=r.atenuacion; ratio=r.ratio;
   }
 
-  /* ══════════════ CONTROLES ══════════════ */
-  function showError(msg){
-    const w=document.getElementById('gateWarn');
-    if(w){ w.textContent='⚠ '+msg; }
-    console.error('[AR]',msg);
+  // Render AR
+  renderer.render(scene,camera);
+
+  // UI
+  document.getElementById('t_x').textContent=Estado.pos.x.toFixed(2)+' m';
+  document.getElementById('t_z').textContent=Estado.pos.z.toFixed(2)+' m';
+  document.getElementById('t_steps').textContent=Estado.pasos;
+  document.getElementById('t_atten').textContent=aten.toFixed(0)+'%';
+  // barra elástica
+  const efill=document.getElementById('efill'), elabel=document.getElementById('elabel');
+  const pct=Math.min(ratio*100,100); efill.style.width=pct+'%';
+  if(Estado.R>0){
+    if(ratio<.7){efill.style.background='var(--accent3)';elabel.textContent=`Zona libre · ${pct.toFixed(0)}%`;}
+    else if(ratio<.9){efill.style.background='var(--warn)';elabel.textContent=`Atenuación suave: ${aten.toFixed(0)}%`;}
+    else{efill.style.background='var(--accent2)';elabel.textContent=`ELASTIC CAPPING: ${aten.toFixed(0)}%`;}
   }
-  async function startApp(){
-    // 0. Verificar que las librerías cargaron
-    if(typeof THREE==='undefined'){ showError('THREE.js no cargó. Revisa tu conexión o el CDN.'); return; }
-    if(typeof THREEx==='undefined' || !THREEx.ArToolkitSource){ showError('AR.js (THREEx) no cargó. Revisa la consola.'); return; }
-    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ showError('Tu navegador no soporta cámara web. Necesitas Chrome moderno + HTTPS.'); return; }
-    if(location.protocol!=='https:' && location.hostname!=='localhost'){ showError('Necesita HTTPS para acceder a la cámara.'); return; }
 
-    // 1. Permisos IMU (iOS) - en Android suelen no requerirse
-    for(const Ev of [window.DeviceMotionEvent,window.DeviceOrientationEvent]){
-      if(Ev&&typeof Ev.requestPermission==='function'){ try{ await Ev.requestPermission(); }catch(e){} }
-    }
-    window.addEventListener('devicemotion',onMotion,true);
-    window.addEventListener('deviceorientation',onOrient,true);
+  // Mini-mapa
+  drawMinimap(ratio);
 
-    // 2. Setup AR (puede lanzar)
-    try{
-      setupAR();
-    }catch(e){
-      showError('Fallo al iniciar AR: '+(e.message||e));
+  requestAnimationFrame(loop);
+}
+
+/* ══════════════ MINI-MAPA ══════════════ */
+const mm=document.getElementById('mmCanvas'); const mctx=mm.getContext('2d');
+function fitMM(){ const r=mm.parentElement.getBoundingClientRect(); const dpr=devicePixelRatio||1; mm.width=r.width*dpr; mm.height=r.height*dpr; mctx.setTransform(1,0,0,1,0,0); mctx.scale(dpr,dpr); mm._w=r.width; mm._h=r.height; }
+fitMM(); window.addEventListener('resize',fitMM);
+function drawMinimap(ratio){
+  if(!mm._w) return;
+  const W=mm._w, H=mm._h, cx=W/2, cy=H/2;
+  mctx.clearRect(0,0,W,H);
+  mctx.fillStyle='rgba(13,16,24,0)'; mctx.fillRect(0,0,W,H);
+  // escala: el R operativo ocupa 0.42 del minimapa
+  const scale = Estado.R>0 ? (W*0.42/Estado.R) : 30;
+  // grilla
+  mctx.strokeStyle='rgba(30,37,53,.6)'; mctx.lineWidth=.5;
+  for(let i=-3;i<=3;i++){ mctx.beginPath();mctx.moveTo(cx+i*scale,0);mctx.lineTo(cx+i*scale,H);mctx.stroke();
+                          mctx.beginPath();mctx.moveTo(0,cy+i*scale);mctx.lineTo(W,cy+i*scale);mctx.stroke();}
+  // círculos R
+  if(Estado.R>0){
+    mctx.beginPath();mctx.arc(cx,cy,Estado.R*scale,0,Math.PI*2);mctx.strokeStyle='rgba(255,75,110,.7)';mctx.lineWidth=1.5;mctx.stroke();
+    mctx.beginPath();mctx.arc(cx,cy,Estado.R*scale*.7,0,Math.PI*2);mctx.strokeStyle='rgba(0,229,255,.4)';mctx.setLineDash([3,3]);mctx.lineWidth=1;mctx.stroke();mctx.setLineDash([]);
+  }
+  // origen (marcador)
+  mctx.beginPath();mctx.arc(cx,cy,4,0,Math.PI*2);mctx.fillStyle='#00e5ff';mctx.fill();
+  // tú
+  const px=cx+Estado.pos.x*scale, py=cy+Estado.pos.z*scale;
+  mctx.beginPath();mctx.arc(px,py,6,0,Math.PI*2);
+  mctx.fillStyle=Estado.markerVisible?'rgba(127,255,106,.4)':'rgba(245,197,66,.4)';mctx.fill();
+  mctx.strokeStyle=Estado.markerVisible?'#7fff6a':'#f5c542';mctx.lineWidth=2;mctx.stroke();
+}
+
+/* ══════════════ CONTROLES ══════════════ */
+function showError(msg){
+  const w=document.getElementById('gateWarn');
+  if(w){ w.textContent='⚠ '+msg; }
+  console.error('[AR]',msg);
+}
+async function startApp(){
+  // Esperar a que el importmap termine de cargar three + ar-threex
+  const t0=performance.now();
+  while(!window.__ARJS_READY__ || typeof THREE==='undefined' || typeof THREEx==='undefined' || !THREEx.ArToolkitSource){
+    if(performance.now()-t0 > 10000){
+      showError('AR.js no cargó en 10s. Revisa la consola (F12) y tu conexión.');
       return;
     }
-    Estado.arReady=true;
-    document.getElementById('gate').classList.add('hidden');
-    document.getElementById('btn-cal').disabled=false;
-    document.getElementById('btn-recenter').disabled=false;
-    requestAnimationFrame(loop);
+    await new Promise(r=>setTimeout(r,150));
   }
-  document.getElementById('btn-start').addEventListener('click',()=>{
-    startApp().catch(e=>showError('Error inesperado: '+(e.message||e)));
-  });
 
-  document.getElementById('btn-cal').addEventListener('click',()=>{
-    if(!Estado.markerVisible){document.getElementById('elabel').textContent='⚠ Apunta primero al marcador';return;}
-    Estado.calibrating=true; Estado.pasos=0; Estado.refPosForR={...Estado.pos};
-    document.getElementById('btn-cal').disabled=true;
-    document.getElementById('btn-setR').disabled=false;
-    document.getElementById('elabel').textContent='Camina hacia una pared y pulsa "Fijar R" al llegar';
-  });
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ showError('Tu navegador no soporta cámara web.'); return; }
+  if(location.protocol!=='https:' && location.hostname!=='localhost'){ showError('Necesita HTTPS para acceder a la cámara.'); return; }
 
-  document.getElementById('btn-setR').addEventListener('click',()=>{
-    if(!Estado.refPosForR) return;
-    const dx=Estado.pos.x-Estado.refPosForR.x, dz=Estado.pos.z-Estado.refPosForR.z;
-    Estado.R = Math.hypot(dx,dz);
-    if(Estado.R<0.3) Estado.R=0.3; // mínimo razonable
-    Estado.calibrating=false;
-    document.getElementById('btn-setR').disabled=true;
-    document.getElementById('btn-cal').disabled=false;
-    document.getElementById('elabel').textContent=`R fijado: ${Estado.R.toFixed(2)} m · recorre libremente`;
-  });
+  // 1. Permisos IMU (iOS) - en Android suelen no requerirse
+  for(const Ev of [window.DeviceMotionEvent,window.DeviceOrientationEvent]){
+    if(Ev&&typeof Ev.requestPermission==='function'){ try{ await Ev.requestPermission(); }catch(e){} }
+  }
+  window.addEventListener('devicemotion',onMotion,true);
+  window.addEventListener('deviceorientation',onOrient,true);
 
-  document.getElementById('btn-recenter').addEventListener('click',()=>{
-    // si el marcador está visible, recentra al marcador (ancla real)
-    // si no, recentra el IMU al último fix conocido
-    Estado.imuPos.x=0; Estado.imuPos.z=0;
-    Estado.pos.x=0; Estado.pos.z=0;
-    Estado.pasos=0;
-  });
-  </script>
-  </body>
-  </html>
+  // 2. Setup AR (puede lanzar)
+  try{
+    setupAR();
+  }catch(e){
+    showError('Fallo al iniciar AR: '+(e.message||e));
+    return;
+  }
+  Estado.arReady=true;
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('btn-cal').disabled=false;
+  document.getElementById('btn-recenter').disabled=false;
+  requestAnimationFrame(loop);
+}
+document.getElementById('btn-start').addEventListener('click',()=>{
+  startApp().catch(e=>showError('Error inesperado: '+(e.message||e)));
+});
+
+document.getElementById('btn-cal').addEventListener('click',()=>{
+  if(!Estado.markerVisible){document.getElementById('elabel').textContent='⚠ Apunta primero al marcador';return;}
+  Estado.calibrating=true; Estado.pasos=0; Estado.refPosForR={...Estado.pos};
+  document.getElementById('btn-cal').disabled=true;
+  document.getElementById('btn-setR').disabled=false;
+  document.getElementById('elabel').textContent='Camina hacia una pared y pulsa "Fijar R" al llegar';
+});
+
+document.getElementById('btn-setR').addEventListener('click',()=>{
+  if(!Estado.refPosForR) return;
+  const dx=Estado.pos.x-Estado.refPosForR.x, dz=Estado.pos.z-Estado.refPosForR.z;
+  Estado.R = Math.hypot(dx,dz);
+  if(Estado.R<0.3) Estado.R=0.3; // mínimo razonable
+  Estado.calibrating=false;
+  document.getElementById('btn-setR').disabled=true;
+  document.getElementById('btn-cal').disabled=false;
+  document.getElementById('elabel').textContent=`R fijado: ${Estado.R.toFixed(2)} m · recorre libremente`;
+});
+
+document.getElementById('btn-recenter').addEventListener('click',()=>{
+  // si el marcador está visible, recentra al marcador (ancla real)
+  // si no, recentra el IMU al último fix conocido
+  Estado.imuPos.x=0; Estado.imuPos.z=0;
+  Estado.pos.x=0; Estado.pos.z=0;
+  Estado.pasos=0;
+});
+</script>
+</body>
+</html>
