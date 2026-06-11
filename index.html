@@ -283,8 +283,9 @@ function onResize(){
 }
 
 /* ══════════════ LOOP ══════════════ */
-const tmpV = new THREE.Vector3();
+let tmpV = null;  // se inicializa cuando THREE esté disponible
 function loop(){
+  if(!tmpV) tmpV = new THREE.Vector3();
   if(arToolkitSource && arToolkitSource.ready) arToolkitContext.update(arToolkitSource.domElement);
 
   const wasVisible = Estado.markerVisible;
