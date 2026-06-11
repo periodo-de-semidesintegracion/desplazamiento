@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AR Marker + IMU · Tracking híbrido</title>
+<title>Vista subjetiva 3D · Tracking por marcador</title>
 <style>
   :root{
     --bg:#0a0c10;--surface:#111520;--border:#1e2535;
@@ -12,22 +12,29 @@
     --mono:'Courier New',monospace;--ui:'Trebuchet MS',sans-serif;
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;background:#000;color:var(--text);font-family:var(--ui);overflow:hidden;}
+  html,body{height:100%;background:#0a0c10;color:var(--text);font-family:var(--ui);overflow:hidden;}
 
-  /* Vídeo de la cámara y canvas de three.js — ambos a pantalla completa */
-  #ar-stage{position:fixed;inset:0;overflow:hidden;}
-  #ar-stage > video, #ar-stage > canvas{
-    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-    width:100%!important;height:100%!important;object-fit:cover;
-  }
+  /* Escena subjetiva: ocupa toda la pantalla */
+  #fpv-canvas{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:1;}
+
+  /* Vista AR pequeña (PiP) — el feed de cámara + cubo de detección, anclado abajo izquierda */
+  #ar-pip{position:fixed;left:12px;top:60px;width:120px;height:90px;z-index:5;
+    border:2px solid var(--accent);border-radius:10px;overflow:hidden;
+    box-shadow:0 4px 20px rgba(0,229,255,.25);background:#000;}
+  #ar-pip.hidden{display:none;}
+  #ar-pip > video, #ar-pip > canvas{
+    position:absolute!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;
+    width:100%!important;height:100%!important;object-fit:cover!important;}
+  #ar-pip .lbl{position:absolute;bottom:3px;left:5px;font-family:var(--mono);font-size:8px;color:var(--accent);
+    letter-spacing:1.5px;background:rgba(0,0,0,.55);padding:1px 5px;border-radius:2px;z-index:10;}
 
   /* HUD superior */
   .top{position:fixed;top:0;left:0;right:0;padding:12px 14px;display:flex;justify-content:space-between;gap:10px;
     pointer-events:none;z-index:10;}
-  .tag{font-family:var(--mono);font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent);
+  .tag{font-family:var(--mono);font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent3);
     border:1px solid var(--border);padding:3px 8px;border-radius:2px;background:rgba(10,12,16,.65);backdrop-filter:blur(8px);}
   .title h1{font-size:14px;font-weight:800;margin-top:6px;line-height:1;color:#fff;}
-  .title h1 em{font-style:normal;color:var(--accent);}
+  .title h1 em{font-style:normal;color:var(--accent3);}
 
   .pill{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:5px 10px;border-radius:14px;
     background:rgba(10,12,16,.7);backdrop-filter:blur(8px);border:1px solid var(--border);
@@ -37,18 +44,11 @@
   .pill.imu{color:var(--warn);} .pill.imu .d{background:var(--warn);}
   .pill.idle{color:var(--muted);} .pill.idle .d{background:var(--muted);}
 
-  /* Mini-mapa cenital del espacio */
-  #minimap{position:fixed;right:12px;top:60px;width:140px;height:140px;
-    background:rgba(10,12,16,.75);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:10px;z-index:10;
-    overflow:hidden;}
-  #minimap canvas{width:100%;height:100%;display:block;}
-  #minimap .ml{position:absolute;top:4px;left:6px;font-family:var(--mono);font-size:8px;color:var(--muted);letter-spacing:1.5px;}
-
   /* HUD inferior + controles */
   .bottom{position:fixed;bottom:0;left:0;right:0;background:rgba(10,12,16,.85);backdrop-filter:blur(18px);
     border-top:1px solid var(--border);border-radius:14px 14px 0 0;padding:10px 14px calc(10px + env(safe-area-inset-bottom));z-index:10;}
-  .telerow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:9px;}
-  .tcell{background:rgba(13,16,24,.7);border:1px solid var(--border);border-radius:7px;padding:6px 7px;font-family:var(--mono);}
+  .telerow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:9px;}
+  .tcell{background:rgba(13,16,24,.7);border:1px solid var(--border);border-radius:7px;padding:6px 8px;font-family:var(--mono);}
   .tcell .lbl{font-size:8px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;}
   .tcell .val{font-size:13px;font-weight:700;color:var(--text);margin-top:1px;}
   .tcell .val.ac{color:var(--accent);} .tcell .val.a2{color:var(--accent2);} .tcell .val.a3{color:var(--accent3);}
@@ -57,15 +57,15 @@
   .btn{flex:1;padding:11px;border:none;border-radius:9px;font-family:var(--mono);font-weight:700;font-size:11px;
     letter-spacing:.06em;cursor:pointer;transition:transform .08s,box-shadow .2s;text-transform:uppercase;}
   .btn:active{transform:scale(.96);}
-  .btn-p{background:var(--accent);color:#001a1f;box-shadow:0 3px 14px rgba(0,229,255,.3);}
-  .btn-s{background:var(--accent2);color:#1a0008;box-shadow:0 3px 14px rgba(255,75,110,.3);}
+  .btn-p{background:var(--accent3);color:#031a0c;box-shadow:0 3px 14px rgba(127,255,106,.3);}
   .btn-g{background:transparent;color:var(--text);border:1px solid var(--border);}
   .btn[disabled]{opacity:.35;pointer-events:none;}
 
-  /* Elastic bar */
-  .ebar{margin-top:8px;font-family:var(--mono);font-size:8.5px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
-  .etrack{background:#0d1018;border:1px solid var(--border);border-radius:3px;height:5px;overflow:hidden;margin-top:3px;}
-  .efill{height:100%;width:0%;background:var(--accent3);transition:width .15s,background .3s;}
+  /* Indicador de paso */
+  .stepdot{position:fixed;right:12px;top:60px;width:38px;height:38px;border-radius:50%;z-index:5;
+    background:rgba(245,197,66,.15);border:2px solid var(--warn);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:12px;font-weight:700;color:var(--warn);transition:transform .1s,background .1s;}
+  .stepdot.flash{transform:scale(1.3);background:rgba(245,197,66,.45);}
 
   /* Gate inicial */
   .gate{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -73,77 +73,72 @@
   .gate.hidden{display:none;}
   .gate .tag{margin-bottom:14px;}
   .gate h2{font-size:22px;font-weight:800;line-height:1.16;margin-bottom:10px;max-width:330px;letter-spacing:-.4px;color:#fff;}
-  .gate h2 em{font-style:normal;color:var(--accent);}
-  .gate p{color:var(--muted);font-size:12.5px;line-height:1.55;max-width:330px;margin-bottom:8px;}
-  .gate .steps{text-align:left;max-width:340px;margin:12px 0 18px;}
-  .gate .steps .s{display:flex;gap:10px;margin-bottom:9px;font-size:12px;line-height:1.5;color:var(--text);}
-  .gate .steps .n{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#001a1f;
-    font-family:var(--mono);font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;}
-  .gate .steps b{color:var(--accent);}
+  .gate h2 em{font-style:normal;color:var(--accent3);}
+  .gate p{color:var(--muted);font-size:12.5px;line-height:1.55;max-width:340px;margin-bottom:8px;}
   .gate .marker-tip{font-family:var(--mono);font-size:10.5px;color:var(--accent3);background:rgba(127,255,106,.08);
-    border:1px solid rgba(127,255,106,.3);border-radius:8px;padding:10px 12px;max-width:340px;margin-bottom:14px;text-align:left;line-height:1.5;}
+    border:1px solid rgba(127,255,106,.3);border-radius:8px;padding:10px 12px;max-width:340px;margin:14px 0 18px;text-align:left;line-height:1.5;}
+  .gate .steps{text-align:left;max-width:340px;margin-bottom:18px;}
+  .gate .steps .s{display:flex;gap:10px;margin-bottom:9px;font-size:12px;line-height:1.5;color:var(--text);}
+  .gate .steps .n{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--accent3);color:#031a0c;
+    font-family:var(--mono);font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;}
+  .gate .steps b{color:var(--accent3);}
   .gate .btn{max-width:340px;width:100%;padding:13px;}
   .warnmsg{color:var(--accent2);font-size:11px;font-family:var(--mono);margin-top:10px;max-width:340px;line-height:1.5;}
 
-  /* indicador de paso pulsante */
-  .stepdot{position:fixed;left:12px;top:60px;width:38px;height:38px;border-radius:50%;z-index:10;
-    background:rgba(245,197,66,.15);border:2px solid var(--warn);display:flex;align-items:center;justify-content:center;
-    font-family:var(--mono);font-size:12px;font-weight:700;color:var(--warn);transition:transform .1s,background .1s;}
-  .stepdot.flash{transform:scale(1.3);background:rgba(245,197,66,.45);}
+  /* Toggle de PiP */
+  #pip-toggle{position:fixed;top:155px;left:12px;z-index:6;background:rgba(10,12,16,.7);border:1px solid var(--border);
+    color:var(--accent);font-family:var(--mono);font-size:9px;padding:4px 8px;border-radius:14px;cursor:pointer;letter-spacing:1px;}
 </style>
 </head>
 <body>
 
-<!-- escenario AR: video + three.js canvas se inyectan aquí -->
-<div id="ar-stage"></div>
+<!-- Escena subjetiva 3D — pantalla completa, capa principal -->
+<canvas id="fpv-canvas"></canvas>
+
+<!-- Vista AR como Picture-in-Picture -->
+<div id="ar-pip">
+  <span class="lbl">AR · DETECTOR</span>
+</div>
+<button id="pip-toggle">ocultar AR</button>
 
 <!-- HUD -->
 <div class="top">
-  <div class="title"><span class="tag">AR.js + IMU</span><h1>Marcador como <em>ancla</em></h1></div>
+  <div class="title"><span class="tag">First-Person · Anchored</span><h1>Vista <em>subjetiva</em></h1></div>
   <div id="pill" class="pill idle"><span class="d"></span><span id="pillTxt">EN ESPERA</span></div>
 </div>
 
-<div id="minimap"><span class="ml">MINIMAPA</span><canvas id="mmCanvas"></canvas></div>
-
 <div class="stepdot" id="stepdot">0</div>
 
-<!-- HUD inferior -->
 <div class="bottom">
   <div class="telerow">
     <div class="tcell"><div class="lbl">pos X</div><div class="val ac" id="t_x">0.00 m</div></div>
     <div class="tcell"><div class="lbl">pos Z</div><div class="val ac" id="t_z">0.00 m</div></div>
-    <div class="tcell"><div class="lbl">pasos</div><div class="val a2" id="t_steps">0</div></div>
-    <div class="tcell"><div class="lbl">atenuación</div><div class="val a3" id="t_atten">0%</div></div>
+    <div class="tcell"><div class="lbl">rumbo</div><div class="val a3" id="t_h">0°</div></div>
   </div>
   <div class="btnrow">
-    <button class="btn btn-g" id="btn-cal" disabled>Calibrar R (caminar)</button>
-    <button class="btn btn-s" id="btn-setR" disabled>Fijar R aquí</button>
-    <button class="btn btn-p" id="btn-recenter" disabled>Recentrar</button>
-  </div>
-  <div class="ebar"><span id="elabel">Espera al primer fix del marcador…</span>
-    <div class="etrack"><div class="efill" id="efill"></div></div>
+    <button class="btn btn-g" id="btn-recenter" disabled>Recentrar pasos</button>
+    <button class="btn btn-p" id="btn-fullscreen">Pantalla completa</button>
   </div>
 </div>
 
 <!-- Gate inicial -->
 <div class="gate" id="gate">
-  <span class="tag">Tracking visual + inercial</span>
-  <h2>Marcador AR<br>como <em>ancla</em> del cuarto</h2>
-  <p>El marcador físico en el centro corrige la deriva del IMU cada vez que la cámara lo ve. Es como tener un ARCore casero.</p>
+  <span class="tag">Vista subjetiva con ancla AR</span>
+  <h2>Camina por un<br>mundo <em>virtual</em> anclado</h2>
+  <p>Una escena 3D con cilindro central, cubos y esferas. La cámara virtual sigue tus pasos y orientación, anclada al marcador.</p>
   <div class="marker-tip">
-    📄 <b>Necesitas el marcador impreso.</b> Abre <code>marker_hiro.html</code> en cualquier pantalla, o imprime la imagen Hiro estándar y colócala plana en el centro del cuarto.
+    📄 <b>Necesitas el marcador Hiro</b> en el centro del cuarto, plano y bien iluminado.
   </div>
   <div class="steps">
-    <div class="s"><span class="n">1</span><span>Coloca el <b>marcador Hiro</b> en el centro del cuarto, plano y bien iluminado.</span></div>
-    <div class="s"><span class="n">2</span><span>Apunta la cámara al marcador hasta ver el <b>cubo verde</b> sobre él (ancla detectada).</span></div>
-    <div class="s"><span class="n">3</span><span>Pulsa <b>Calibrar R</b> y camina hacia una pared contando pasos; pulsa <b>Fijar R</b> al llegar.</span></div>
-    <div class="s"><span class="n">4</span><span>Recorre el cuarto: si pierdes el marcador, los pasos cubren el hueco hasta volver a verlo.</span></div>
+    <div class="s"><span class="n">1</span><span>Coloca el marcador en el <b>centro</b> del espacio donde te vas a mover.</span></div>
+    <div class="s"><span class="n">2</span><span>Apunta la cámara al marcador para <b>anclar el mundo virtual</b>.</span></div>
+    <div class="s"><span class="n">3</span><span>Camina libremente: el <b>cilindro verde central</b> marca el origen siempre.</span></div>
   </div>
   <button class="btn btn-p" id="btn-start">Iniciar cámara</button>
   <div class="warnmsg" id="gateWarn"></div>
 </div>
 
-<!-- AR.js 3.4.7+ usa MÓDULOS ES con importmap. La forma clásica de <script> está obsoleta. -->
+<!-- AR.js + Three vía importmap -->
 <script type="importmap">
 {
   "imports": {
@@ -156,8 +151,6 @@
 <script type="module">
 import * as THREE from 'three';
 import { ArToolkitSource, ArToolkitContext, ArMarkerControls } from 'threex';
-
-// Exponemos las clases en window para que el resto del script las use con los nombres conocidos
 window.THREE = THREE;
 window.THREEx = { ArToolkitSource, ArToolkitContext, ArMarkerControls };
 window.__ARJS_READY__ = true;
@@ -166,36 +159,17 @@ console.log('[AR.js] cargado correctamente vía importmap');
 
 <script>
 /* ══════════════ ESTADO ══════════════ */
-const Estado = {
-  arReady:false,         // AR.js arrancado
-  markerVisible:false,   // ¿el marcador está en cámara ahora?
-  // posición de la cámara respecto al marcador (m) — viene de AR.js cuando markerVisible
-  arPos:{x:0,y:0,z:0},
-  // posición fusionada (lo que mostramos / usamos para elastic capping)
-  pos:{x:0,z:0},
-  // posición estimada solo por pasos (para cubrir cuando se pierde marcador)
-  imuPos:{x:0,z:0},
-  // calibración del cuarto
-  R:0, calibrating:false, refPosForR:null,
-  // pasos
-  pasos:0, heading:0, strideM:0.70,
-  // misc
+const Estado={
+  arReady:false, markerVisible:false,
+  arPos:{x:0,y:0,z:0},           // posición teléfono respecto al marcador (m), de AR.js
+  pos:{x:0,z:0},                  // posición fusionada usada por la cámara subjetiva
+  imuPos:{x:0,z:0},               // estimación por pasos cuando no hay marcador
+  heading:0,                      // rumbo absoluto (rad) de la brújula
+  pasos:0, strideM:0.70,
   lastFixTime:0
 };
 
-/* ══════════════ ELASTIC CAPPING (tu lógica) ══════════════ */
-function elasticCapping(pos, R){
-  if(!R||R<=0) return {x:pos.x,z:pos.z,ratio:0,atenuacion:0};
-  const dist = Math.hypot(pos.x,pos.z);
-  const ratio = Math.min(dist/R,2.0);
-  if(dist<=0) return {x:0,z:0,ratio:0,atenuacion:0};
-  const zonaLibre=0.70;
-  if(ratio<=zonaLibre) return {x:pos.x,z:pos.z,ratio,atenuacion:0};
-  const exceso=(ratio-zonaLibre)/(1.0-zonaLibre);
-  const factorLog=Math.log(1+exceso*1.5)/Math.log(2.5);
-  const distEf=R*zonaLibre+(R-R*zonaLibre)*(1-factorLog*0.65);
-  return {x:(pos.x/dist)*distEf, z:(pos.z/dist)*distEf, ratio:Math.min(ratio,1), atenuacion:Math.min(factorLog*100,100)};
-}
+function showError(msg){const w=document.getElementById('gateWarn'); if(w) w.textContent='⚠ '+msg; console.error('[ERR]',msg);}
 
 /* ══════════════ DETECCIÓN DE PASOS ══════════════ */
 const STEP={thresh:1.1,minInterval:280,lastStepMs:0,ema:0,emaA:0.85,armed:true};
@@ -211,249 +185,261 @@ function onMotion(e){
   if(!Estado.arReady) return;
   const a=e.accelerationIncludingGravity||e.acceleration;
   if(!a||a.x===null) return;
-  if(detectStep(Math.hypot(a.x,a.y,a.z), performance.now())) onStep();
+  if(detectStep(Math.hypot(a.x,a.y,a.z),performance.now())) onStep();
 }
 function onStep(){
   Estado.pasos++;
+  // alpha=0 norte → -Z en la escena. El paso avanza en la dirección del rumbo.
   const dx=Math.sin(Estado.heading)*Estado.strideM;
   const dz=-Math.cos(Estado.heading)*Estado.strideM;
-  // El IMU SOLO se usa cuando el marcador no está visible (relleno)
-  Estado.imuPos.x += dx;
-  Estado.imuPos.z += dz;
-  // feedback
+  Estado.imuPos.x+=dx; Estado.imuPos.z+=dz;
   const sd=document.getElementById('stepdot');
-  sd.textContent=Estado.pasos;
-  sd.classList.add('flash'); setTimeout(()=>sd.classList.remove('flash'),120);
+  sd.textContent=Estado.pasos; sd.classList.add('flash');
+  setTimeout(()=>sd.classList.remove('flash'),120);
 }
 
-/* ══════════════ SCENE AR.js + Three.js ══════════════ */
-let scene, camera, renderer, arToolkitSource, arToolkitContext, markerRoot, anchorCube;
-
+/* ══════════════ AR.js (escena oculta del detector) ══════════════ */
+let arScene, arCamera, arRenderer, arSource, arContext, markerRoot, anchorCube;
 function setupAR(){
-  scene = new THREE.Scene();
-  camera = new THREE.Camera(); scene.add(camera);
+  arScene=new THREE.Scene();
+  arCamera=new THREE.Camera(); arScene.add(arCamera);
+  arRenderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  arRenderer.setClearColor(new THREE.Color('black'),0);
+  arRenderer.setSize(window.innerWidth,window.innerHeight);
+  arRenderer.domElement.style.position='absolute';
+  arRenderer.domElement.style.top='0'; arRenderer.domElement.style.left='0';
+  document.getElementById('ar-pip').appendChild(arRenderer.domElement);
 
-  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
-  renderer.setClearColor(new THREE.Color('black'),0);
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.domElement.style.position='absolute';
-  renderer.domElement.style.top='0'; renderer.domElement.style.left='0';
-  document.getElementById('ar-stage').appendChild(renderer.domElement);
+  arScene.add(new THREE.AmbientLight(0xffffff,1.0));
 
-  scene.add(new THREE.AmbientLight(0xffffff,0.9));
-  const dl=new THREE.DirectionalLight(0xffffff,0.7); dl.position.set(2,4,2); scene.add(dl);
-
-  // Fuente de video (cámara trasera)
-  arToolkitSource = new THREEx.ArToolkitSource({sourceType:'webcam', sourceWidth:1280, sourceHeight:960});
-  arToolkitSource.init(()=>{ setTimeout(onResize,200); }, (err)=>{
-    const m=err&&err.name?err.name+': '+(err.message||''):'No se pudo acceder a la cámara';
-    showError(m+' · Revisa permiso de cámara y que ningún otro app la esté usando.');
+  arSource=new THREEx.ArToolkitSource({sourceType:'webcam',sourceWidth:1280,sourceHeight:960});
+  arSource.init(()=>{ setTimeout(onARResize,200); }, err=>{
+    showError((err&&err.name?err.name+': ':'')+'No se pudo acceder a la cámara');
   });
-
-  // Contexto AR
-  arToolkitContext = new THREEx.ArToolkitContext({
-    cameraParametersUrl: 'https://raw.githack.com/AR-js-org/AR.js/master/data/data/camera_para.dat',
+  arContext=new THREEx.ArToolkitContext({
+    cameraParametersUrl:'https://raw.githack.com/AR-js-org/AR.js/master/data/data/camera_para.dat',
     detectionMode:'mono', maxDetectionRate:30, canvasWidth:640, canvasHeight:480
   });
-  arToolkitContext.init(()=>{ camera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix()); });
+  arContext.init(()=>{ arCamera.projectionMatrix.copy(arContext.getProjectionMatrix()); });
 
-  // Marker root: lo que se "ancla" al Hiro físico
-  markerRoot = new THREE.Group(); scene.add(markerRoot);
-  new THREEx.ArMarkerControls(arToolkitContext, markerRoot, {
+  markerRoot=new THREE.Group(); arScene.add(markerRoot);
+  new THREEx.ArMarkerControls(arContext, markerRoot, {
     type:'pattern',
     patternUrl:'https://raw.githack.com/AR-js-org/AR.js/master/data/data/patt.hiro'
   });
-
-  // Cubo verde sobre el marcador (feedback visual de "ancla detectada")
-  anchorCube = new THREE.Mesh(
-    new THREE.BoxGeometry(1,1,1),
-    new THREE.MeshStandardMaterial({color:0x7fff6a, emissive:0x7fff6a, emissiveIntensity:.3, metalness:.3, roughness:.4, transparent:true, opacity:.85})
+  // pequeño cubo verde sobre el marcador para que veas que está detectado
+  anchorCube=new THREE.Mesh(
+    new THREE.BoxGeometry(.6,.6,.6),
+    new THREE.MeshBasicMaterial({color:0x7fff6a,wireframe:true})
   );
-  anchorCube.position.y=0.5;
-  markerRoot.add(anchorCube);
-  // ejes para que sepas la orientación del marcador
-  markerRoot.add(new THREE.AxesHelper(1));
-
-  window.addEventListener('resize',onResize);
+  anchorCube.position.y=0.3; markerRoot.add(anchorCube);
+  window.addEventListener('resize',onARResize);
 }
-function onResize(){
-  arToolkitSource.onResizeElement();
-  arToolkitSource.copyElementSizeTo(renderer.domElement);
-  if(arToolkitContext.arController) arToolkitSource.copyElementSizeTo(arToolkitContext.arController.canvas);
+function onARResize(){
+  if(!arSource) return;
+  arSource.onResizeElement();
+  arSource.copyElementSizeTo(arRenderer.domElement);
+  if(arContext.arController) arSource.copyElementSizeTo(arContext.arController.canvas);
+}
+
+/* ══════════════ ESCENA SUBJETIVA 3D ══════════════ */
+let fpvScene, fpvCamera, fpvRenderer;
+function setupFPV(){
+  const canvas=document.getElementById('fpv-canvas');
+  fpvRenderer=new THREE.WebGLRenderer({canvas,antialias:true});
+  fpvRenderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  fpvRenderer.setSize(window.innerWidth,window.innerHeight,false);
+  fpvRenderer.setClearColor(0x0a1018, 1);
+
+  fpvScene=new THREE.Scene();
+  fpvScene.fog=new THREE.Fog(0x0a1018, 8, 30);
+
+  // cámara subjetiva: altura típica de teléfono en mano ~ 1.5m
+  fpvCamera=new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.05, 100);
+  fpvCamera.position.set(0,1.5,0);
+
+  // luces
+  fpvScene.add(new THREE.HemisphereLight(0x88aaff, 0x1a0d22, 0.8));
+  const sun=new THREE.DirectionalLight(0xffffff, 0.9);
+  sun.position.set(5,10,5); fpvScene.add(sun);
+  const rim=new THREE.DirectionalLight(0x7fff6a, 0.3);
+  rim.position.set(-5,4,-5); fpvScene.add(rim);
+
+  // PLANO DE PISO con grilla
+  const floor=new THREE.Mesh(
+    new THREE.PlaneGeometry(40,40),
+    new THREE.MeshStandardMaterial({color:0x12182a, roughness:.8, metalness:.1})
+  );
+  floor.rotation.x=-Math.PI/2; fpvScene.add(floor);
+  const grid=new THREE.GridHelper(40, 40, 0x2a3a5a, 0x1a2540);
+  grid.material.opacity=.6; grid.material.transparent=true;
+  fpvScene.add(grid);
+  // anillos concéntricos cada metro para sensación de escala
+  for(let r=1;r<=6;r++){
+    const ring=new THREE.Mesh(
+      new THREE.RingGeometry(r-0.015,r+0.015,64),
+      new THREE.MeshBasicMaterial({color:0x2de2a3, transparent:true, opacity:.15, side:THREE.DoubleSide})
+    );
+    ring.rotation.x=-Math.PI/2; ring.position.y=0.01; fpvScene.add(ring);
+  }
+
+  // CILINDRO CENTRAL — el "tótem" en el marcador
+  const cylinder=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 3.5, 16),
+    new THREE.MeshStandardMaterial({color:0x7fff6a, emissive:0x2de2a3, emissiveIntensity:.6, metalness:.4, roughness:.3})
+  );
+  cylinder.position.set(0, 1.75, 0); fpvScene.add(cylinder);
+  // remate luminoso arriba
+  const top=new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 24, 24),
+    new THREE.MeshBasicMaterial({color:0x7fff6a})
+  );
+  top.position.set(0, 3.6, 0); fpvScene.add(top);
+  // halo en la base del cilindro
+  const halo=new THREE.Mesh(
+    new THREE.RingGeometry(0.18, 0.32, 32),
+    new THREE.MeshBasicMaterial({color:0x7fff6a, transparent:true, opacity:.5, side:THREE.DoubleSide})
+  );
+  halo.rotation.x=-Math.PI/2; halo.position.y=0.02; fpvScene.add(halo);
+
+  // CUBOS Y ESFERAS dispersos como referentes de paralaje
+  const referentes = [
+    // cubos
+    {tipo:'cubo', x: 2.5, z:-3.0, s:0.6, color:0xff4b6e},
+    {tipo:'cubo', x:-3.2, z:-2.0, s:0.5, color:0x00e5ff},
+    {tipo:'cubo', x: 4.0, z: 2.5, s:0.8, color:0xffaf3f},
+    {tipo:'cubo', x:-2.0, z: 3.5, s:0.4, color:0xc77dff},
+    {tipo:'cubo', x: 1.0, z: 5.5, s:0.7, color:0xff4b6e},
+    // esferas
+    {tipo:'esfera', x:-4.5, z: 0.5, r:0.35, color:0x00e5ff},
+    {tipo:'esfera', x: 3.5, z:-1.0, r:0.5,  color:0xffaf3f},
+    {tipo:'esfera', x: 0.5, z:-4.5, r:0.4,  color:0xc77dff},
+    {tipo:'esfera', x:-1.5, z: 1.5, r:0.25, color:0xff4b6e},
+    {tipo:'esfera', x: 5.0, z: 4.0, r:0.6,  color:0x7fff6a},
+    {tipo:'esfera', x:-5.0, z:-3.5, r:0.3,  color:0x00e5ff},
+  ];
+  referentes.forEach(r=>{
+    let mesh;
+    if(r.tipo==='cubo'){
+      mesh=new THREE.Mesh(
+        new THREE.BoxGeometry(r.s,r.s,r.s),
+        new THREE.MeshStandardMaterial({color:r.color, emissive:r.color, emissiveIntensity:.18, metalness:.4, roughness:.35})
+      );
+      mesh.position.set(r.x, r.s/2, r.z);
+    }else{
+      mesh=new THREE.Mesh(
+        new THREE.SphereGeometry(r.r, 28, 28),
+        new THREE.MeshStandardMaterial({color:r.color, emissive:r.color, emissiveIntensity:.18, metalness:.4, roughness:.3})
+      );
+      mesh.position.set(r.x, r.r, r.z);
+    }
+    fpvScene.add(mesh);
+    // base luminosa para que se distingan contra el piso
+    const base=new THREE.Mesh(
+      new THREE.RingGeometry(r.s?r.s*0.55:r.r*1.05, r.s?r.s*0.8:r.r*1.35, 24),
+      new THREE.MeshBasicMaterial({color:r.color, transparent:true, opacity:.4, side:THREE.DoubleSide})
+    );
+    base.rotation.x=-Math.PI/2; base.position.set(r.x, 0.015, r.z);
+    fpvScene.add(base);
+  });
+
+  window.addEventListener('resize',onFPVResize);
+}
+function onFPVResize(){
+  if(!fpvRenderer) return;
+  fpvRenderer.setSize(window.innerWidth,window.innerHeight,false);
+  fpvCamera.aspect=window.innerWidth/window.innerHeight;
+  fpvCamera.updateProjectionMatrix();
 }
 
 /* ══════════════ LOOP ══════════════ */
-let tmpV = null;  // se inicializa cuando THREE esté disponible
+let tmpV=null;
 function loop(){
-  if(!tmpV) tmpV = new THREE.Vector3();
-  if(arToolkitSource && arToolkitSource.ready) arToolkitContext.update(arToolkitSource.domElement);
+  if(!tmpV) tmpV=new THREE.Vector3();
 
-  const wasVisible = Estado.markerVisible;
+  // --- Update AR detector ---
+  if(arSource && arSource.ready) arContext.update(arSource.domElement);
   Estado.markerVisible = markerRoot && markerRoot.visible;
 
   if(Estado.markerVisible){
-    // Posición de la CÁMARA respecto al marcador.
-    // markerRoot tiene la pose del marcador en el frame de cámara; queremos lo inverso:
-    // posición del observador (teléfono) respecto al marcador en su frame.
-    // Truco: invertir la matriz mundial del marker_root.
+    // posición del teléfono en el frame del marcador
     markerRoot.updateMatrixWorld(true);
-    const inv = new THREE.Matrix4().copy(markerRoot.matrixWorld).invert();
-    // la posición de la cámara en mundo es (0,0,0); transformada al frame del marcador:
+    const inv=new THREE.Matrix4().copy(markerRoot.matrixWorld).invert();
     tmpV.set(0,0,0).applyMatrix4(inv);
-    Estado.arPos.x = tmpV.x; Estado.arPos.y = tmpV.y; Estado.arPos.z = tmpV.z;
-    Estado.lastFixTime = performance.now();
-
-    // Fusión: cuando hay fix, la posición ES la del marcador. Reseteamos el IMU para futuras pérdidas.
-    Estado.pos.x = Estado.arPos.x;
-    Estado.pos.z = Estado.arPos.z;
-    Estado.imuPos.x = Estado.arPos.x;
-    Estado.imuPos.z = Estado.arPos.z;
-
-    if(!wasVisible){
-      document.getElementById('elabel').textContent='Marcador detectado · tracking absoluto';
-    }
+    Estado.arPos.x=tmpV.x; Estado.arPos.y=tmpV.y; Estado.arPos.z=tmpV.z;
+    // Re-ancla la posición fusionada al marcador (corrige deriva del IMU)
+    Estado.pos.x=Estado.arPos.x; Estado.pos.z=Estado.arPos.z;
+    Estado.imuPos.x=Estado.arPos.x; Estado.imuPos.z=Estado.arPos.z;
+    Estado.lastFixTime=performance.now();
   }else{
-    // Sin marcador: usa la última posición + el IMU acumulado
-    Estado.pos.x = Estado.imuPos.x;
-    Estado.pos.z = Estado.imuPos.z;
+    // sin marcador: usa el dead reckoning de pasos
+    Estado.pos.x=Estado.imuPos.x; Estado.pos.z=Estado.imuPos.z;
   }
 
-  // Estado / pill
+  // Pill de estado
   const pill=document.getElementById('pill'), pt=document.getElementById('pillTxt');
   if(!Estado.arReady){pill.className='pill idle';pt.textContent='EN ESPERA';}
   else if(Estado.markerVisible){pill.className='pill ar';pt.textContent='ANCLA VISUAL';}
   else{pill.className='pill imu';pt.textContent='SOLO IMU';}
 
-  // Aplicar elastic capping si hay R
-  let aten=0, ratio=0;
-  if(Estado.R>0){
-    const r=elasticCapping(Estado.pos, Estado.R);
-    // sobrescribir si está fuera de la zona libre (el capping retiene visualmente)
-    Estado.pos.x=r.x; Estado.pos.z=r.z;
-    aten=r.atenuacion; ratio=r.ratio;
-  }
+  // --- Mover cámara subjetiva ---
+  // posición XZ desde el tracking; Y fijo a altura de teléfono
+  fpvCamera.position.x = Estado.pos.x;
+  fpvCamera.position.z = Estado.pos.z;
+  fpvCamera.position.y = 1.5;
+  // rotar la cámara según el rumbo
+  // alpha=0 → norte → mirar a -Z (que es la dirección donde está el cilindro si vienes desde el sur)
+  fpvCamera.rotation.set(0, -Estado.heading, 0, 'YXZ');
 
-  // Render AR
-  renderer.render(scene,camera);
+  // --- Renders ---
+  arRenderer.render(arScene, arCamera);
+  fpvRenderer.render(fpvScene, fpvCamera);
 
-  // UI
+  // --- UI ---
   document.getElementById('t_x').textContent=Estado.pos.x.toFixed(2)+' m';
   document.getElementById('t_z').textContent=Estado.pos.z.toFixed(2)+' m';
-  document.getElementById('t_steps').textContent=Estado.pasos;
-  document.getElementById('t_atten').textContent=aten.toFixed(0)+'%';
-  // barra elástica
-  const efill=document.getElementById('efill'), elabel=document.getElementById('elabel');
-  const pct=Math.min(ratio*100,100); efill.style.width=pct+'%';
-  if(Estado.R>0){
-    if(ratio<.7){efill.style.background='var(--accent3)';elabel.textContent=`Zona libre · ${pct.toFixed(0)}%`;}
-    else if(ratio<.9){efill.style.background='var(--warn)';elabel.textContent=`Atenuación suave: ${aten.toFixed(0)}%`;}
-    else{efill.style.background='var(--accent2)';elabel.textContent=`ELASTIC CAPPING: ${aten.toFixed(0)}%`;}
-  }
-
-  // Mini-mapa
-  drawMinimap(ratio);
+  document.getElementById('t_h').textContent=((Estado.heading*180/Math.PI+360)%360).toFixed(0)+'°';
 
   requestAnimationFrame(loop);
 }
 
-/* ══════════════ MINI-MAPA ══════════════ */
-const mm=document.getElementById('mmCanvas'); const mctx=mm.getContext('2d');
-function fitMM(){ const r=mm.parentElement.getBoundingClientRect(); const dpr=devicePixelRatio||1; mm.width=r.width*dpr; mm.height=r.height*dpr; mctx.setTransform(1,0,0,1,0,0); mctx.scale(dpr,dpr); mm._w=r.width; mm._h=r.height; }
-fitMM(); window.addEventListener('resize',fitMM);
-function drawMinimap(ratio){
-  if(!mm._w) return;
-  const W=mm._w, H=mm._h, cx=W/2, cy=H/2;
-  mctx.clearRect(0,0,W,H);
-  mctx.fillStyle='rgba(13,16,24,0)'; mctx.fillRect(0,0,W,H);
-  // escala: el R operativo ocupa 0.42 del minimapa
-  const scale = Estado.R>0 ? (W*0.42/Estado.R) : 30;
-  // grilla
-  mctx.strokeStyle='rgba(30,37,53,.6)'; mctx.lineWidth=.5;
-  for(let i=-3;i<=3;i++){ mctx.beginPath();mctx.moveTo(cx+i*scale,0);mctx.lineTo(cx+i*scale,H);mctx.stroke();
-                          mctx.beginPath();mctx.moveTo(0,cy+i*scale);mctx.lineTo(W,cy+i*scale);mctx.stroke();}
-  // círculos R
-  if(Estado.R>0){
-    mctx.beginPath();mctx.arc(cx,cy,Estado.R*scale,0,Math.PI*2);mctx.strokeStyle='rgba(255,75,110,.7)';mctx.lineWidth=1.5;mctx.stroke();
-    mctx.beginPath();mctx.arc(cx,cy,Estado.R*scale*.7,0,Math.PI*2);mctx.strokeStyle='rgba(0,229,255,.4)';mctx.setLineDash([3,3]);mctx.lineWidth=1;mctx.stroke();mctx.setLineDash([]);
-  }
-  // origen (marcador)
-  mctx.beginPath();mctx.arc(cx,cy,4,0,Math.PI*2);mctx.fillStyle='#00e5ff';mctx.fill();
-  // tú
-  const px=cx+Estado.pos.x*scale, py=cy+Estado.pos.z*scale;
-  mctx.beginPath();mctx.arc(px,py,6,0,Math.PI*2);
-  mctx.fillStyle=Estado.markerVisible?'rgba(127,255,106,.4)':'rgba(245,197,66,.4)';mctx.fill();
-  mctx.strokeStyle=Estado.markerVisible?'#7fff6a':'#f5c542';mctx.lineWidth=2;mctx.stroke();
-}
-
-/* ══════════════ CONTROLES ══════════════ */
-function showError(msg){
-  const w=document.getElementById('gateWarn');
-  if(w){ w.textContent='⚠ '+msg; }
-  console.error('[AR]',msg);
-}
+/* ══════════════ ARRANQUE ══════════════ */
 async function startApp(){
-  // Esperar a que el importmap termine de cargar three + ar-threex
   const t0=performance.now();
   while(!window.__ARJS_READY__ || typeof THREE==='undefined' || typeof THREEx==='undefined' || !THREEx.ArToolkitSource){
-    if(performance.now()-t0 > 10000){
-      showError('AR.js no cargó en 10s. Revisa la consola (F12) y tu conexión.');
-      return;
-    }
+    if(performance.now()-t0>10000){ showError('AR.js no cargó en 10s.'); return; }
     await new Promise(r=>setTimeout(r,150));
   }
-
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ showError('Tu navegador no soporta cámara web.'); return; }
-  if(location.protocol!=='https:' && location.hostname!=='localhost'){ showError('Necesita HTTPS para acceder a la cámara.'); return; }
-
-  // 1. Permisos IMU (iOS) - en Android suelen no requerirse
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ showError('Tu navegador no soporta cámara web.'); return; }
+  if(location.protocol!=='https:'&&location.hostname!=='localhost'){ showError('Necesita HTTPS.'); return; }
   for(const Ev of [window.DeviceMotionEvent,window.DeviceOrientationEvent]){
     if(Ev&&typeof Ev.requestPermission==='function'){ try{ await Ev.requestPermission(); }catch(e){} }
   }
   window.addEventListener('devicemotion',onMotion,true);
   window.addEventListener('deviceorientation',onOrient,true);
-
-  // 2. Setup AR (puede lanzar)
-  try{
-    setupAR();
-  }catch(e){
-    showError('Fallo al iniciar AR: '+(e.message||e));
-    return;
-  }
+  try{ setupFPV(); setupAR(); }
+  catch(e){ showError('Fallo al iniciar: '+(e.message||e)); return; }
   Estado.arReady=true;
   document.getElementById('gate').classList.add('hidden');
-  document.getElementById('btn-cal').disabled=false;
   document.getElementById('btn-recenter').disabled=false;
   requestAnimationFrame(loop);
 }
-document.getElementById('btn-start').addEventListener('click',()=>{
-  startApp().catch(e=>showError('Error inesperado: '+(e.message||e)));
-});
-
-document.getElementById('btn-cal').addEventListener('click',()=>{
-  if(!Estado.markerVisible){document.getElementById('elabel').textContent='⚠ Apunta primero al marcador';return;}
-  Estado.calibrating=true; Estado.pasos=0; Estado.refPosForR={...Estado.pos};
-  document.getElementById('btn-cal').disabled=true;
-  document.getElementById('btn-setR').disabled=false;
-  document.getElementById('elabel').textContent='Camina hacia una pared y pulsa "Fijar R" al llegar';
-});
-
-document.getElementById('btn-setR').addEventListener('click',()=>{
-  if(!Estado.refPosForR) return;
-  const dx=Estado.pos.x-Estado.refPosForR.x, dz=Estado.pos.z-Estado.refPosForR.z;
-  Estado.R = Math.hypot(dx,dz);
-  if(Estado.R<0.3) Estado.R=0.3; // mínimo razonable
-  Estado.calibrating=false;
-  document.getElementById('btn-setR').disabled=true;
-  document.getElementById('btn-cal').disabled=false;
-  document.getElementById('elabel').textContent=`R fijado: ${Estado.R.toFixed(2)} m · recorre libremente`;
-});
+document.getElementById('btn-start').addEventListener('click',()=>startApp().catch(e=>showError('Error: '+(e.message||e))));
 
 document.getElementById('btn-recenter').addEventListener('click',()=>{
-  // si el marcador está visible, recentra al marcador (ancla real)
-  // si no, recentra el IMU al último fix conocido
-  Estado.imuPos.x=0; Estado.imuPos.z=0;
-  Estado.pos.x=0; Estado.pos.z=0;
-  Estado.pasos=0;
+  Estado.imuPos.x=0; Estado.imuPos.z=0; Estado.pos.x=0; Estado.pos.z=0; Estado.pasos=0;
+  document.getElementById('stepdot').textContent='0';
+});
+
+document.getElementById('btn-fullscreen').addEventListener('click',()=>{
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen().catch(()=>{});
+});
+
+document.getElementById('pip-toggle').addEventListener('click',(e)=>{
+  const p=document.getElementById('ar-pip');
+  p.classList.toggle('hidden');
+  e.target.textContent = p.classList.contains('hidden') ? 'mostrar AR' : 'ocultar AR';
 });
 </script>
 </body>
