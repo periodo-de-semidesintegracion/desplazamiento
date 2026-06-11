@@ -88,6 +88,25 @@
   /* Toggle de PiP */
   #pip-toggle{position:fixed;top:155px;left:12px;z-index:6;background:rgba(10,12,16,.7);border:1px solid var(--border);
     color:var(--accent);font-family:var(--mono);font-size:9px;padding:4px 8px;border-radius:14px;cursor:pointer;letter-spacing:1px;}
+
+  /* Overlay de "esperando marcador" */
+  .wait-overlay{position:fixed;inset:0;z-index:8;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:40px;background:rgba(10,12,16,.78);backdrop-filter:blur(4px);
+    pointer-events:none;animation:waitPulse 1.8s ease-in-out infinite;}
+  .wait-overlay.hidden{display:none;}
+  .wait-icon{font-size:64px;color:var(--accent3);text-shadow:0 0 24px var(--accent3);margin-bottom:14px;animation:waitSpin 3s linear infinite;}
+  .wait-title{font-family:var(--ui);font-size:22px;font-weight:800;color:#fff;line-height:1.2;margin-bottom:8px;letter-spacing:-.5px;}
+  .wait-sub{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
+  @keyframes waitPulse{0%,100%{background:rgba(10,12,16,.78);}50%{background:rgba(127,255,106,.05);}}
+  @keyframes waitSpin{0%{transform:rotate(0);}100%{transform:rotate(360deg);}}
+
+  /* Flash de re-ancla */
+  .reanchor-flash{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0.5);
+    z-index:20;font-family:var(--mono);font-size:36px;font-weight:900;letter-spacing:4px;
+    color:#031a0c;background:var(--accent3);padding:14px 28px;border-radius:8px;
+    box-shadow:0 0 40px var(--accent3),0 0 80px rgba(127,255,106,.6);
+    opacity:0;pointer-events:none;transition:opacity .15s,transform .25s cubic-bezier(.2,2,.4,1);}
+  .reanchor-flash.show{opacity:1;transform:translate(-50%,-50%) scale(1);}
 </style>
 </head>
 <body>
@@ -109,6 +128,16 @@
 
 <div class="stepdot" id="stepdot">0</div>
 
+<!-- Overlay: pidiendo reanclaje (escena congelada esperando marcador) -->
+<div id="wait-overlay" class="wait-overlay hidden">
+  <div class="wait-icon">⊙</div>
+  <div class="wait-title">Apunta la cámara<br>al marcador</div>
+  <div class="wait-sub">la escena está congelada hasta detectarlo</div>
+</div>
+
+<!-- Flash de re-ancla exitoso -->
+<div id="reanchor-flash" class="reanchor-flash">RE-ANCLADO</div>
+
 <div class="bottom">
   <div class="telerow">
     <div class="tcell"><div class="lbl">pos X</div><div class="val ac" id="t_x">0.00 m</div></div>
@@ -116,7 +145,7 @@
     <div class="tcell"><div class="lbl">rumbo</div><div class="val a3" id="t_h">0°</div></div>
   </div>
   <div class="btnrow">
-    <button class="btn btn-g" id="btn-recenter" disabled>Recentrar pasos</button>
+    <button class="btn btn-g" id="btn-recenter" disabled>Reiniciar recorrido</button>
     <button class="btn btn-p" id="btn-fullscreen">Pantalla completa</button>
   </div>
 </div>
@@ -166,7 +195,10 @@ const Estado={
   imuPos:{x:0,z:0},               // estimación por pasos cuando no hay marcador
   heading:0,                      // rumbo absoluto (rad) de la brújula
   pasos:0, strideM:0.70,
-  lastFixTime:0
+  lastFixTime:0,
+  // --- Modo "esperando reanclaje" ---
+  waitingForReanchor:false,       // true tras pulsar "Reiniciar recorrido"
+  flashUntil:0                    // timestamp ms hasta el cual mostrar flash de re-ancla
 };
 
 function showError(msg){const w=document.getElementById('gateWarn'); if(w) w.textContent='⚠ '+msg; console.error('[ERR]',msg);}
@@ -183,6 +215,7 @@ function detectStep(mag,now){
 function onOrient(e){ if(e.alpha!==null) Estado.heading=e.alpha*Math.PI/180; }
 function onMotion(e){
   if(!Estado.arReady) return;
+  if(Estado.waitingForReanchor) return;  // no acumular pasos mientras esperamos reanclaje
   const a=e.accelerationIncludingGravity||e.acceleration;
   if(!a||a.x===null) return;
   if(detectStep(Math.hypot(a.x,a.y,a.z),performance.now())) onStep();
@@ -373,6 +406,7 @@ function loop(){
 
   // --- Update AR detector ---
   if(arSource && arSource.ready) arContext.update(arSource.domElement);
+  const wasVisible = Estado.markerVisible;
   Estado.markerVisible = markerRoot && markerRoot.visible;
 
   if(Estado.markerVisible){
@@ -385,9 +419,27 @@ function loop(){
     Estado.pos.x=Estado.arPos.x; Estado.pos.z=Estado.arPos.z;
     Estado.imuPos.x=Estado.arPos.x; Estado.imuPos.z=Estado.arPos.z;
     Estado.lastFixTime=performance.now();
+
+    // Si estábamos esperando el reanclaje, ahora se cumplió: ¡flash de confirmación!
+    if(Estado.waitingForReanchor){
+      Estado.waitingForReanchor=false;
+      document.getElementById('wait-overlay').classList.add('hidden');
+      const flash=document.getElementById('reanchor-flash');
+      flash.classList.add('show');
+      Estado.flashUntil=performance.now()+900;
+    }
   }else{
-    // sin marcador: usa el dead reckoning de pasos
-    Estado.pos.x=Estado.imuPos.x; Estado.pos.z=Estado.imuPos.z;
+    // sin marcador: usa el dead reckoning de pasos (excepto si estamos esperando reanclaje)
+    if(!Estado.waitingForReanchor){
+      Estado.pos.x=Estado.imuPos.x; Estado.pos.z=Estado.imuPos.z;
+    }
+    // Si estamos esperando, NO actualizamos pos: la escena queda congelada en el último estado.
+  }
+
+  // Apagar el flash cuando expire
+  if(Estado.flashUntil && performance.now()>Estado.flashUntil){
+    document.getElementById('reanchor-flash').classList.remove('show');
+    Estado.flashUntil=0;
   }
 
   // Pill de estado
@@ -456,8 +508,13 @@ async function startApp(){
 document.getElementById('btn-start').addEventListener('click',()=>startApp().catch(e=>showError('Error: '+(e.message||e))));
 
 document.getElementById('btn-recenter').addEventListener('click',()=>{
-  Estado.imuPos.x=0; Estado.imuPos.z=0; Estado.pos.x=0; Estado.pos.z=0; Estado.pasos=0;
+  // Reset del IMU (no fuerza posición, eso lo hará el marcador cuando vuelva a verse)
+  Estado.imuPos.x=0; Estado.imuPos.z=0;
+  Estado.pasos=0;
   document.getElementById('stepdot').textContent='0';
+  // Entrar en modo "esperando marcador": congela la escena y muestra overlay
+  Estado.waitingForReanchor=true;
+  document.getElementById('wait-overlay').classList.remove('hidden');
 });
 
 document.getElementById('btn-fullscreen').addEventListener('click',()=>{
